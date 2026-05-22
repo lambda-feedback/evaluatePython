@@ -1,30 +1,54 @@
 import unittest
 
-from .evaluation import Params, evaluation_function
+from .evaluation import evaluation_function
+
+_SQUARE_CODE = "n = int(input())\nprint(n * n)"
+_CRASH_CODE = "raise ValueError('oops')"
+_INFINITE_CODE = "while True: pass"
+
+
+def _params(*tests):
+    return {"tests": list(tests)}
+
+
+def _test(inp, expected, hidden=False):
+    return {"input": inp, "expected_output": expected, "hidden": hidden}
+
 
 class TestEvaluationFunction(unittest.TestCase):
-    """
-    TestCase Class used to test the algorithm.
-    ---
-    Tests are used here to check that the algorithm written
-    is working as it should.
 
-    It's best practise to write these tests first to get a
-    kind of 'specification' for how your algorithm should
-    work, and you should run these tests before committing
-    your code to AWS.
+    def test_all_pass(self):
+        params = _params(_test("5\n", "25\n"), _test("3\n", "9\n"))
+        result = evaluation_function(_SQUARE_CODE, None, params).to_dict()
 
-    Read the docs on how to use unittest here:
-    https://docs.python.org/3/library/unittest.html
+        self.assertTrue(result["is_correct"])
+        self.assertIn("2/2 tests passed", result["feedback"])
 
-    Use evaluation_function() to check your algorithm works
-    as it should.
-    """
+    def test_partial_fail(self):
+        params = _params(_test("5\n", "25\n"), _test("3\n", "99\n"))
+        result = evaluation_function(_SQUARE_CODE, None, params).to_dict()
 
-    def test_evaluation(self):
-        response, answer, params = "Hello, World", "Hello, World", Params()
+        self.assertFalse(result["is_correct"])
+        self.assertIn("1/2 tests passed", result["feedback"])
 
-        result = evaluation_function(response, answer, params).to_dict()
+    def test_hidden_test_fail(self):
+        params = _params(_test("5\n", "999\n", hidden=True))
+        result = evaluation_function(_SQUARE_CODE, None, params).to_dict()
 
-        self.assertEqual(result.get("is_correct"), True)
-        self.assertFalse(result.get("feedback", False))
+        self.assertFalse(result["is_correct"])
+        self.assertIn("Hidden test 1", result["feedback"])
+        self.assertNotIn("999", result["feedback"])
+        self.assertNotIn("5", result["feedback"])
+
+    def test_runtime_error(self):
+        params = _params(_test("5\n", "25\n"))
+        result = evaluation_function(_CRASH_CODE, None, params).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("runtime error", result["feedback"])
+
+    def test_no_tests(self):
+        result = evaluation_function(_SQUARE_CODE, None, {}).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("No test cases", result["feedback"])
