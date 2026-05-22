@@ -26,16 +26,26 @@ def _run_code(code: str, stdin: str) -> tuple[str, str, bool]:
         os.unlink(tmpfile)
 
 
+def _code_block(label: str, content: str) -> str:
+    return f"{label}:\n```\n{content}\n```"
+
+
 def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     tests = params.get("tests", [])
+    result = Result()
 
     if not tests:
-        result = Result(is_correct=False)
-        result.add_feedback("error", "No test cases provided.")
+        stdout, stderr, timed_out = _run_code(str(response), "")
+        if timed_out:
+            result.add_feedback("error", f"Code timed out after {_TIMEOUT}s.")
+        elif stderr and not stdout:
+            result.add_feedback("error", _code_block("Error", stderr.strip()))
+        else:
+            output = stdout.rstrip() or "(no output)"
+            result.add_feedback("output", _code_block("Output", output))
         return result
 
     passed = 0
-    result = Result()
 
     for i, test in enumerate(tests, 1):
         stdin = test.get("input", "")
@@ -44,31 +54,42 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
 
         stdout, stderr, timed_out = _run_code(str(response), stdin)
         actual = stdout.rstrip()
+        label = f"Hidden test {i}" if hidden else f"Test {i}"
 
         if timed_out:
             tag = "hidden_fail" if hidden else "fail"
-            label = f"Hidden test {i}" if hidden else f"Test {i}"
             result.add_feedback(tag, f"{label}: timed out after {_TIMEOUT}s.")
         elif stderr and not stdout:
             tag = "hidden_fail" if hidden else "fail"
-            label = f"Hidden test {i}" if hidden else f"Test {i}"
-            msg = f"{label}: runtime error." if hidden else f"{label}: runtime error.\n{stderr.strip()}"
-            result.add_feedback(tag, msg)
+            if hidden:
+                result.add_feedback(tag, f"{label}: runtime error.")
+            else:
+                parts = [f"{label}: runtime error."]
+                if stdin.strip():
+                    parts.append(_code_block("Input", stdin.rstrip()))
+                parts.append(_code_block("Error", stderr.strip()))
+                result.add_feedback(tag, "\n\n".join(parts))
         elif actual == expected:
             passed += 1
-            label = f"Hidden test {i}" if hidden else f"Test {i}"
-            result.add_feedback("pass", f"{label}: passed.")
+            if hidden:
+                result.add_feedback("pass", f"{label}: passed.")
+            else:
+                parts = [f"{label}: passed."]
+                if stdin.strip():
+                    parts.append(_code_block("Input", stdin.rstrip()))
+                parts.append(_code_block("Output", actual or "(no output)"))
+                result.add_feedback("pass", "\n\n".join(parts))
         else:
             tag = "hidden_fail" if hidden else "fail"
             if hidden:
-                result.add_feedback(tag, f"Hidden test {i}: failed.")
+                result.add_feedback(tag, f"{label}: failed.")
             else:
-                result.add_feedback(tag, (
-                    f"Test {i}: failed.\n"
-                    f"  Input:    {stdin.rstrip()}\n"
-                    f"  Expected: {expected}\n"
-                    f"  Got:      {actual}"
-                ))
+                parts = [f"{label}: failed."]
+                if stdin.strip():
+                    parts.append(_code_block("Input", stdin.rstrip()))
+                parts.append(_code_block("Your output", actual or "(no output)"))
+                parts.append(_code_block("Expected", expected))
+                result.add_feedback(tag, "\n\n".join(parts))
 
     result.is_correct = passed == len(tests)
     result.add_feedback("summary", f"{passed}/{len(tests)} tests passed.")

@@ -23,6 +23,7 @@ class TestEvaluationFunction(unittest.TestCase):
 
         self.assertTrue(result["is_correct"])
         self.assertIn("2/2 tests passed", result["feedback"])
+        self.assertIn("```", result["feedback"])
 
     def test_partial_fail(self):
         params = _params(_test("5\n", "25\n"), _test("3\n", "99\n"))
@@ -30,6 +31,7 @@ class TestEvaluationFunction(unittest.TestCase):
 
         self.assertFalse(result["is_correct"])
         self.assertIn("1/2 tests passed", result["feedback"])
+        self.assertIn("```", result["feedback"])
 
     def test_hidden_test_fail(self):
         params = _params(_test("5\n", "999\n", hidden=True))
@@ -46,9 +48,10 @@ class TestEvaluationFunction(unittest.TestCase):
 
         self.assertFalse(result["is_correct"])
         self.assertIn("runtime error", result["feedback"])
+        self.assertIn("```", result["feedback"])
 
     def test_no_tests(self):
         result = evaluation_function(_SQUARE_CODE, None, {}).to_dict()
 
         self.assertFalse(result["is_correct"])
-        self.assertIn("No test cases", result["feedback"])
+        self.assertIn("```", result["feedback"])
