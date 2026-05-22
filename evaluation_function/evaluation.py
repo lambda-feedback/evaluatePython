@@ -1,15 +1,46 @@
 import os
+import shutil
 import subprocess
 import tempfile
 from typing import Any
+
+from PIL import Image
 from lf_toolkit.evaluation import Result, Params
+from lf_toolkit.evaluation.image_upload import upload_image, ImageUploadError
 
 _TIMEOUT = 5
+_UPLOAD_FOLDER = "evaluatePython"
+
+_PREAMBLE_TEMPLATE = """\
+import os as _os
+import matplotlib.pyplot as _plt
+import atexit as _atexit
+
+_plot_dir = {plot_dir!r}
+_plot_idx = [0]
+
+def _patched_show(*args, **kwargs):
+    for num in _plt.get_fignums():
+        _plot_idx[0] += 1
+        _plt.figure(num).savefig(_os.path.join(_plot_dir, str(_plot_idx[0]).zfill(4) + '.png'))
+    _plt.close('all')
+
+_plt.show = _patched_show
+
+def _capture_remaining():
+    for num in _plt.get_fignums():
+        _plot_idx[0] += 1
+        _plt.figure(num).savefig(_os.path.join(_plot_dir, str(_plot_idx[0]).zfill(4) + '.png'))
+
+_atexit.register(_capture_remaining)
+"""
 
 
-def _run_code(code: str, stdin: str) -> tuple[str, str, bool]:
+def _run_code(code: str, stdin: str) -> tuple[str, str, bool, list[Image.Image]]:
+    plot_dir = tempfile.mkdtemp()
+    preamble = _PREAMBLE_TEMPLATE.format(plot_dir=plot_dir)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-        f.write(code)
+        f.write(preamble + "\n" + code)
         tmpfile = f.name
     try:
         proc = subprocess.run(
@@ -20,15 +51,34 @@ def _run_code(code: str, stdin: str) -> tuple[str, str, bool]:
             timeout=_TIMEOUT,
             env={**os.environ, "MPLBACKEND": "Agg"},
         )
-        return proc.stdout, proc.stderr, False
+        images = []
+        for fn in sorted(os.listdir(plot_dir)):
+            if fn.endswith(".png"):
+                img = Image.open(os.path.join(plot_dir, fn))
+                img.load()
+                img.format = "PNG"
+                images.append(img)
+        return proc.stdout, proc.stderr, False, images
     except subprocess.TimeoutExpired:
-        return "", "", True
+        return "", "", True, []
     finally:
         os.unlink(tmpfile)
+        shutil.rmtree(plot_dir, ignore_errors=True)
 
 
 def _code_block(label: str, content: str) -> str:
     return f"{label}:\n```\n{content}\n```"
+
+
+def _upload_plots(images: list[Image.Image]) -> list[str]:
+    result = []
+    for i, img in enumerate(images, 1):
+        try:
+            url = upload_image(img, _UPLOAD_FOLDER)
+            result.append(f"![Plot {i}]({url})")
+        except ImageUploadError:
+            pass
+    return result
 
 
 def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
@@ -36,14 +86,15 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     result = Result()
 
     if not tests:
-        stdout, stderr, timed_out = _run_code(str(response), "")
+        stdout, stderr, timed_out, images = _run_code(str(response), "")
         if timed_out:
             result.add_feedback("error", f"Code timed out after {_TIMEOUT}s.")
         elif stderr and not stdout:
             result.add_feedback("error", _code_block("Error", stderr.strip()))
         else:
-            output = stdout.rstrip() or "(no output)"
-            result.add_feedback("output", _code_block("Output", output))
+            parts = [_code_block("Output", stdout.rstrip() or "(no output)")]
+            parts.extend(_upload_plots(images))
+            result.add_feedback("output", "\n\n".join(parts))
         return result
 
     passed = 0
@@ -53,7 +104,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         expected = test.get("expected_output", "").rstrip()
         hidden = test.get("hidden", False)
 
-        stdout, stderr, timed_out = _run_code(str(response), stdin)
+        stdout, stderr, timed_out, images = _run_code(str(response), stdin)
         actual = stdout.rstrip()
         label = f"Hidden test {i}" if hidden else f"Test {i}"
 
@@ -79,6 +130,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
                 if stdin.strip():
                     parts.append(_code_block("Input", stdin.rstrip()))
                 parts.append(_code_block("Output", actual or "(no output)"))
+                parts.extend(_upload_plots(images))
                 result.add_feedback("pass", "\n\n".join(parts))
         else:
             tag = "hidden_fail" if hidden else "fail"
@@ -90,6 +142,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
                     parts.append(_code_block("Input", stdin.rstrip()))
                 parts.append(_code_block("Your output", actual or "(no output)"))
                 parts.append(_code_block("Expected", expected))
+                parts.extend(_upload_plots(images))
                 result.add_feedback(tag, "\n\n".join(parts))
 
     result.is_correct = passed == len(tests)
