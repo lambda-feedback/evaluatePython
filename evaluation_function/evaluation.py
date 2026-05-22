@@ -18,6 +18,7 @@ def _run_code(code: str, stdin: str) -> tuple[str, str, bool]:
             capture_output=True,
             text=True,
             timeout=_TIMEOUT,
+            env={**os.environ, "MPLBACKEND": "Agg"},
         )
         return proc.stdout, proc.stderr, False
     except subprocess.TimeoutExpired:
