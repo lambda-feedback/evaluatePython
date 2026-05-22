@@ -1,55 +1,11 @@
-# Python Evaluation Function
+# evaluatePython Evaluation Function
 
-This repository contains the boilerplate code needed to create a containerized evaluation function written in Python.
+This repository uses an existing autograder to provide formative feedback on Python code.
 
 ## Deployment
-[![Create Release Request](https://img.shields.io/badge/Create%20Release%20Request-blue?style=for-the-badge)](https://github.com/lambda-feedback/{REPO_NAME_HERE}/issues/new?template=release-request.yml)
+[![Create Release Request](https://img.shields.io/badge/Create%20Release%20Request-blue?style=for-the-badge)](https://github.com/lambda-feedback/evaluatePython/issues/new?template=release-request.yml)
 To deploy to production, update the README button above to point to the correct repository.
 
-## Quickstart
-
-This chapter helps you to quickly set up a new Python evaluation function using this template repository.
-
-> [!NOTE]
-> After setting up the evaluation function, delete this chapter from the `README.md` file, and add your own documentation.
-
-#### 1. Create a new repository
-
-- In GitHub, choose `Use this template` > `Create a new repository` in the repository toolbar.
-
-- Choose the owner, and pick a name for the new repository.
-
-  > [!IMPORTANT]
-  > If you want to deploy the evaluation function to Lambda Feedback, make sure to choose the Lambda Feedback organization as the owner.
-
-- Set the visibility to `Public` or `Private`.
-
-  > [!IMPORTANT]
-  > If you want to use GitHub [deployment protection rules](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules), make sure to set the visibility to `Public`.
-
-- Click on `Create repository`.
-
-#### 2. Clone the new repository
-
-Clone the new repository to your local machine using the following command:
-
-```bash
-git clone <repository-url>
-```
-
-#### 3. Configure the evaluation function
-
-When deploying to Lambda Feedback, set the evaluation function name in the `config.json` file. Read the [Deploy to Lambda Feedback](#deploy-to-lambda-feedback) section for more information.
-
-#### 4. Develop the evaluation function
-
-You're ready to start developing your evaluation function. Head over to the [Development](#development) section to learn more.
-
-#### 5. Update the README
-
-In the `README.md` file, change the title and description so it fits the purpose of your evaluation function.
-
-Also, don't forget to delete the Quickstart chapter from the `README.md` file after you've completed these steps.
 
 ## Usage
 
