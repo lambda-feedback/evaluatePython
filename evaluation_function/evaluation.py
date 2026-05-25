@@ -13,26 +13,22 @@ _UPLOAD_FOLDER = "evaluatePython"
 
 _PREAMBLE_TEMPLATE = """\
 import os as _os
-import matplotlib.pyplot as _plt
 import atexit as _atexit
 
 _plot_dir = {plot_dir!r}
 _plot_idx = [0]
 
-def _patched_show(*args, **kwargs):
+def _capture_plots():
+    import sys as _sys
+    if 'matplotlib.pyplot' not in _sys.modules:
+        return
+    import matplotlib.pyplot as _plt
     for num in _plt.get_fignums():
         _plot_idx[0] += 1
-        _plt.figure(num).savefig(_os.path.join(_plot_dir, str(_plot_idx[0]).zfill(4) + '.png'))
-    _plt.close('all')
+        _plt.figure(num).savefig(
+            _os.path.join(_plot_dir, str(_plot_idx[0]).zfill(4) + '.png'))
 
-_plt.show = _patched_show
-
-def _capture_remaining():
-    for num in _plt.get_fignums():
-        _plot_idx[0] += 1
-        _plt.figure(num).savefig(_os.path.join(_plot_dir, str(_plot_idx[0]).zfill(4) + '.png'))
-
-_atexit.register(_capture_remaining)
+_atexit.register(_capture_plots)
 """
 
 
@@ -96,6 +92,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
             parts.extend(_upload_plots(images))
             result.add_feedback("output", "\n\n".join(parts))
         return result
+
 
     passed = 0
 
