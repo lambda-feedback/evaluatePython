@@ -134,6 +134,15 @@ _SQUARE_TESTS_UNITTEST = (
     "        self.assertEqual(square(0), 0)\n"
 )
 
+_SQUARE_TESTS_HYPOTHESIS = (
+    "from hypothesis import given, settings\n"
+    "import hypothesis.strategies as st\n"
+    "@given(st.integers(-100, 100))\n"
+    "@settings(max_examples=50)\n"
+    "def test_square(n):\n"
+    "    assert square(n) == n * n, f'square({n}) = {square(n)}, expected {n*n}'\n"
+)
+
 
 def _unit_params(test_code):
     return {"mode": "unit_test", "test_code": test_code}
@@ -181,3 +190,16 @@ class TestUnitTestMode(unittest.TestCase):
 
         self.assertTrue(result["is_correct"])
         self.assertIn("2/2 tests passed", result["feedback"])
+
+    def test_hypothesis_pass(self):
+        result = evaluation_function(_SQUARE_FN, None, _unit_params(_SQUARE_TESTS_HYPOTHESIS)).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+    def test_hypothesis_fail_shows_minimal_example(self):
+        result = evaluation_function(_WRONG_SQUARE_FN, None, _unit_params(_SQUARE_TESTS_HYPOTHESIS)).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("0/1 tests passed", result["feedback"])
+        self.assertIn("square(", result["feedback"])
