@@ -13,7 +13,6 @@ _UPLOAD_FOLDER = "evaluatePython"
 
 _PREAMBLE_TEMPLATE = """\
 import os as _os
-import atexit as _atexit
 
 _plot_dir = {plot_dir!r}
 _plot_idx = [0]
@@ -27,16 +26,16 @@ def _capture_plots():
         _plot_idx[0] += 1
         _plt.figure(num).savefig(
             _os.path.join(_plot_dir, str(_plot_idx[0]).zfill(4) + '.png'))
-
-_atexit.register(_capture_plots)
 """
+
+_CAPTURE_CALL = "_capture_plots()\n"
 
 
 def _run_code(code: str, stdin: str) -> tuple[str, str, bool, list[Image.Image]]:
     plot_dir = tempfile.mkdtemp()
     preamble = _PREAMBLE_TEMPLATE.format(plot_dir=plot_dir)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-        f.write(preamble + "\n" + code)
+        f.write(preamble + "\n" + code + "\n" + _CAPTURE_CALL)
         tmpfile = f.name
     try:
         proc = subprocess.run(
