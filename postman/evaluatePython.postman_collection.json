@@ -696,6 +696,96 @@
           ]
         },
         {
+          "name": "24 – unit_test with Hypothesis property test (pass)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"def square(n): return n * n\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"unit_test\",\n    \"test_code\": \"from hypothesis import given, settings\\nimport hypothesis.strategies as st\\n\\n@given(st.integers(-100, 100))\\n@settings(max_examples=50)\\ndef test_square(n):\\n    assert square(n) == n * n, f'square({n}) = {square(n)}, expected {n*n}'\\n\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 1/1 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('1/1 tests passed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25 – unit_test with Hypothesis property test (fail with minimal example)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"def square(n): return n + 1\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"unit_test\",\n    \"test_code\": \"from hypothesis import given, settings\\nimport hypothesis.strategies as st\\n\\n@given(st.integers(-100, 100))\\n@settings(max_examples=50)\\ndef test_square(n):\\n    assert square(n) == n * n, f'square({n}) = {square(n)}, expected {n*n}'\\n\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback includes minimal failing example', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('square(');",
+                  "});",
+                  "",
+                  "pm.test('Feedback marks test as failed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('failed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "20 – Image generation (demo mode)",
           "request": {
             "method": "POST",
