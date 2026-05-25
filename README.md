@@ -1,194 +1,161 @@
-# evaluatePython Evaluation Function
+# evaluatePython
 
-This repository uses an existing autograder to provide formative feedback on Python code.
+A [Lambda Feedback](https://lambda-feedback.github.io/user-documentation/) evaluation function that executes student Python code submissions in a secure sandbox, runs them against test cases, and returns structured formative feedback. Deployed as a Docker container on the Lambda Feedback platform.
 
 ## Deployment
-[![Create Release Request](https://img.shields.io/badge/Create%20Release%20Request-blue?style=for-the-badge)](https://github.com/lambda-feedback/evaluatePython/issues/new?template=release-request.yml)
-To deploy to production, update the README button above to point to the correct repository.
 
+[![Create Release Request](https://img.shields.io/badge/Create%20Release%20Request-blue?style=for-the-badge)](https://github.com/lambda-feedback/evaluatePython/issues/new?template=release-request.yml)
+
+Push to `main` triggers GitHub Actions which automatically builds and deploys to Lambda Feedback. See [`.github/workflows/`](.github/workflows/) for CI/CD configuration.
 
 ## Usage
 
-You can run the evaluation function either using [the pre-built Docker image](#run-the-docker-image) or build and run [the binary executable](#build-and-run-the-binary).
-
 ### Run the Docker Image
 
-The pre-built Docker image comes with [Shimmy](https://github.com/lambda-feedback/shimmy) installed.
-
-> [!TIP]
-> Shimmy is a small application that listens for incoming HTTP requests, validates the incoming data and forwards it to the underlying evaluation function. Learn more about Shimmy in the [Documentation](https://github.com/lambda-feedback/shimmy).
-
-The pre-built Docker image is available on the GitHub Container Registry. You can run the image using the following command:
-
 ```bash
-docker run -p 8080:8080 ghcr.io/lambda-feedback/evaluation-function-boilerplate-python:latest
+docker run -it --rm -p 8080:8080 ghcr.io/lambda-feedback/evaluatepython:latest
 ```
 
-### Run the Script
+The image includes [Shimmy](https://github.com/lambda-feedback/shimmy), which listens for HTTP requests on port 8080 and forwards them to the evaluation function.
 
-You can choose between running the Python evaluation function itself, ore using Shimmy to run the function.
+### Evaluation Modes
 
-**Raw Mode**
+The function supports three modes, set via `params.mode`.
 
-Use the following command to run the evaluation function directly:
+**`demo`** — run student code and show output (no pass/fail):
 
-```bash
-python -m evaluation_function.main
+```json
+{
+  "response": "print(5 * 5)",
+  "params": { "mode": "demo" }
+}
 ```
 
-This will run the evaluation function using the input data from `request.json` and write the output to `response.json`.
+**`io_test`** — compare stdout against expected output for each test case:
 
-**Shimmy**
+```json
+{
+  "response": "n = int(input())\nprint(n * n)",
+  "params": {
+    "mode": "io_test",
+    "tests": [
+      { "input": "5\n", "expected_output": "25\n" },
+      { "input": "3\n", "expected_output": "9\n", "hidden": true }
+    ]
+  }
+}
+```
 
-To have a more user-friendly experience, you can use [Shimmy](https://github.com/lambda-feedback/shimmy) to run the evaluation function.
+**`unit_test`** — run student code then execute `test_*` functions or `unittest.TestCase` subclasses (including Hypothesis tests):
 
-To run the evaluation function using Shimmy, use the following command:
-
-```bash
-shimmy -c "python" -a "-m" -a "evaluation_function.main" -i ipc
+```json
+{
+  "response": "def square(n): return n * n",
+  "params": {
+    "mode": "unit_test",
+    "test_code": "def test_positive():\n    assert square(5) == 25\ndef test_zero():\n    assert square(0) == 0\n"
+  }
+}
 ```
 
 ## Development
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/)
-- [Python](https://www.python.org)
+- [Python 3.12+](https://www.python.org)
+- [Poetry](https://python-poetry.org)
+- [Docker](https://docs.docker.com/get-docker/) (for container builds)
 
 ### Repository Structure
 
-```bash
-evaluation_function/main.py             # evaluation function entrypoint
-evaluation_function/evaluation.py       # evaluation function implementation
-evaluation_function/evaluation_test.py  # evaluation function tests
-evaluation_function/preview.py          # evaluation function preview
-evaluation_function/preview_test.py     # evaluation function preview tests
-
-config.json                             # evaluation function deployment configuration file
+```
+evaluation_function/main.py             # IPC server entry point
+evaluation_function/evaluation.py       # core evaluation pipeline (all three modes)
+evaluation_function/preview.py          # AST-based security validator
+evaluation_function/dev.py              # CLI wrapper for local testing
+evaluation_function/evaluation_test.py  # integration tests
+evaluation_function/preview_test.py     # preview/security tests
+config.json                             # deployment configuration
 ```
 
-### Development Workflow
-
-In its most basic form, the development workflow consists of writing the evaluation function in the `evaluation_function.wl` file and testing it locally. As long as the evaluation function adheres to the Evaluation Function API, a development workflow which incorporates using Shimmy is not necessary.
-
-Testing the evaluation function can be done by running the `dev.py` script using the Python interpreter like so:
+### Setup
 
 ```bash
-python -m evaluation_function.dev <response> <answer>
+poetry install
 ```
 
-> [!NOTE]
-> Specify the `response` and `answer` as command-line arguments.
+### Local Testing
+
+The `dev.py` script calls the evaluation function directly (no Docker required). It defaults to `demo` mode if no params are supplied:
+
+```bash
+# demo mode (default)
+python -m evaluation_function.dev "print(5 * 5)"
+
+# io_test mode
+python -m evaluation_function.dev "print(int(input())**2)" "" \
+  '{"mode":"io_test","tests":[{"input":"5\n","expected_output":"25\n"}]}'
+
+# unit_test mode
+python -m evaluation_function.dev "def square(n): return n*n" "" \
+  '{"mode":"unit_test","test_code":"def test_sq():\n    assert square(3)==9\n"}'
+```
+
+### Running Tests
+
+```bash
+pytest
+```
+
+### Linting
+
+```bash
+# Critical errors (fail CI)
+flake8 ./evaluation_function --count --select=E9,F63,F7,F82 --show-source --statistics
+# Style/complexity (informational)
+flake8 ./evaluation_function --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+```
 
 ### Building the Docker Image
 
-To build the Docker image, run the following command:
-
 ```bash
-docker build -t my-python-evaluation-function .
+docker build -t evaluatepython .
+# Cross-platform (CI uses linux/x86_64):
+docker build --platform=linux/x86_64 -t evaluatepython .
 ```
 
 ### Running the Docker Image
 
-To run the Docker image, use the following command:
-
 ```bash
-docker run -it --rm -p 8080:8080 my-python-evaluation-function
+docker run -it --rm -p 8080:8080 evaluatepython
 ```
 
-This will start the evaluation function and expose it on port `8080`.
+## Deployment to Lambda Feedback
 
-## Deployment
-
-This section guides you through the deployment process of the evaluation function. If you want to deploy the evaluation function to Lambda Feedback, follow the steps in the [Lambda Feedback](#deploy-to-lambda-feedback) section. Otherwise, you can deploy the evaluation function to other platforms using the [Other Platforms](#deploy-to-other-platforms) section.
-
-### Deploy to Lambda Feedback
-
-Deploying the evaluation function to Lambda Feedback is simple and straightforward, as long as the repository is within the [Lambda Feedback organization](https://github.com/lambda-feedback).
-
-After configuring the repository, a [GitHub Actions workflow](.github/workflows/deploy.yml) will automatically build and deploy the evaluation function to Lambda Feedback as soon as changes are pushed to the main branch of the repository.
-
-**Configuration**
-
-The deployment configuration is stored in the `config.json` file. Choose a unique name for the evaluation function and set the `EvaluationFunctionName` field in [`config.json`](config.json).
+The function name is declared in [`config.json`](config.json) as `"evaluatePython"` (lowerCamelCase). Pushing to `main` triggers automated deployment via GitHub Actions.
 
 > [!IMPORTANT]
-> The evaluation function name must be unique within the Lambda Feedback organization, and must be in `lowerCamelCase`. You can find a example configuration below:
+> The evaluation function name must be unique within the Lambda Feedback organization and must be in `lowerCamelCase`.
 
-```json
-{
-  "EvaluationFunctionName": "compareStringsWithPython"
-}
+## Troubleshooting
+
+### Containerized Function Fails to Start
+
+- **Run-time dependencies**: ensure all packages are in `pyproject.toml` and installed via `poetry install` in the Dockerfile.
+- **Architecture**: some packages are platform-specific. Build with `--platform=linux/x86_64` to match the CI/production environment.
+- **Standalone check**: run the function directly inside the container to isolate startup errors:
+
+```bash
+docker run -it --rm evaluatepython python -m evaluation_function.main
 ```
 
-### Deploy to other Platforms
-
-If you want to deploy the evaluation function to other platforms, you can use the Docker image to deploy the evaluation function.
-
-Please refer to the deployment documentation of the platform you want to deploy the evaluation function to.
-
-If you need help with the deployment, feel free to reach out to the Lambda Feedback team by creating an issue in the template repository.
-
-## FAQ
-
-### Pull Changes from the Template Repository
-
-If you want to pull changes from the template repository to your repository, follow these steps:
-
-1. Add the template repository as a remote:
+### Pulling Changes from the Template Repository
 
 ```bash
 git remote add template https://github.com/lambda-feedback/evaluation-function-boilerplate-python.git
-```
-
-2. Fetch changes from all remotes:
-
-```bash
 git fetch --all
-```
-
-3. Merge changes from the template repository:
-
-```bash
 git merge template/main --allow-unrelated-histories
 ```
 
 > [!WARNING]
-> Make sure to resolve any conflicts and keep the changes you want to keep.
-
-## Troubleshooting
-
-### Containerized Evaluation Function Fails to Start
-
-If your evaluation function is working fine when run locally, but not when containerized, there is much more to consider. Here are some common issues and solution approaches:
-
-**Run-time dependencies**
-
-Make sure that all run-time dependencies are installed in the Docker image.
-
-- Python packages: Make sure to add the dependency to the `pyproject.toml` file, and run `poetry install` in the Dockerfile.
-- System packages: If you need to install system packages, add the installation command to the Dockerfile.
-- ML models: If your evaluation function depends on ML models, make sure to include them in the Docker image.
-- Data files: If your evaluation function depends on data files, make sure to include them in the Docker image.
-
-**Architecture**
-
-Some package may not be compatible with the architecture of the Docker image. Make sure to use the correct platform when building and running the Docker image.
-
-E.g. to build a Docker image for the `linux/x86_64` platform, use the following command:
-
-```bash
-docker build --platform=linux/x86_64 .
-```
-
-**Verify Standalone Execution**
-
-If requests are timing out, it might be due to the evaluation function not being able to run. Make sure that the evaluation function can be run as a standalone script. This will help you to identify issues that are specific to the containerized environment.
-
-To run just the evaluation function as a standalone script, without using Shimmy, use the following command:
-
-```bash
-docker run -it --rm my-python-evaluation-function python -m evaluation_function.main
-```
-
-If the command starts without any errors, the evaluation function is working correctly. If not, you will see the error message in the console.
+> Resolve conflicts carefully — template updates may overwrite evaluatePython-specific code.

@@ -16,25 +16,37 @@ All source lives in `evaluation_function/`:
 ### Evaluation pipeline (`evaluation.py`)
 
 1. Run AST security check on student code
-2. For each test case (or once if none):
-   - Inject matplotlib figure-capture preamble
-   - Execute student code in a subprocess with 25-second timeout (`_TIMEOUT = 25`)
-   - Compare stdout against `expected_output`
+2. Dispatch by `params["mode"]` (required):
+   - **`demo`**: execute code with no stdin; return stdout/plots as `output` feedback (no pass/fail)
+   - **`io_test`**: for each test in `params["tests"]`, execute with `test["input"]` as stdin and compare stdout against `test["expected_output"]`; upload matplotlib plots on pass or fail
+   - **`unit_test`**: append `params["test_code"]` + unit-runner harness to student code; execute once; parse JSON results; supports plain `test_*` functions, `unittest.TestCase` subclasses, and Hypothesis-based tests
 3. Upload any captured matplotlib figures to S3 (`_UPLOAD_FOLDER = "evaluatePython"`)
-4. Return a `Result` with feedback tags: `pass`, `fail`, `hidden_pass`, `hidden_fail`, `error`, `output`, `summary`
+4. Return a `Result` with feedback tags: `pass`, `fail`, `hidden_fail`, `error`, `output`, `summary`
 
 ### Request shape
 
 ```python
-# params["tests"] is optional
+# params["mode"] is required
+
+# demo — run and show output, no pass/fail
+{"mode": "demo"}
+
+# io_test — run against stdin/stdout test cases
 {
+    "mode": "io_test",
     "tests": [
         {
-            "input": "5\n",           # stdin fed to student code
+            "input": "5\n",            # stdin fed to student code
             "expected_output": "25\n", # expected stdout
-            "hidden": False            # if True, suppress expected/actual in feedback
+            "hidden": False            # True = suppress input/output in feedback
         }
     ]
+}
+
+# unit_test — run student code then execute test functions/TestCases
+{
+    "mode": "unit_test",
+    "test_code": "def test_square():\n    assert square(5) == 25\n"
 }
 ```
 
@@ -59,10 +71,12 @@ pytest
 flake8 ./evaluation_function --count --select=E9,F63,F7,F82 --show-source --statistics
 flake8 ./evaluation_function --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-# Manual local testing
-python -m evaluation_function.dev "print(5*5)" "25"
-# With params JSON as third argument:
-python -m evaluation_function.dev "print(5*5)" "" '{"tests":[{"input":"","expected_output":"25\n"}]}'
+# Manual local testing (defaults to demo mode)
+python -m evaluation_function.dev "print(5*5)"
+# io_test mode with params JSON:
+python -m evaluation_function.dev "print(5*5)" "" '{"mode":"io_test","tests":[{"input":"","expected_output":"25\n"}]}'
+# unit_test mode:
+python -m evaluation_function.dev "def sq(n): return n*n" "" '{"mode":"unit_test","test_code":"def test_sq():\n    assert sq(3)==9\n"}'
 
 # Docker build
 docker build -t evaluatepython .
@@ -77,7 +91,7 @@ docker run -it --rm -p 8080:8080 evaluatepython
 
 Two test files, run with `pytest`:
 
-- `evaluation_function/evaluation_test.py` — integration tests covering: all pass, partial fail, hidden test failure, runtime error, no test cases
+- `evaluation_function/evaluation_test.py` — integration tests covering: all modes (demo, io_test, unit_test), all pass, partial fail, hidden test failure, runtime error, matplotlib plot capture, Hypothesis support
 - `evaluation_function/preview_test.py` — unit tests covering: valid Python, syntax errors, dangerous imports, dangerous builtins, dunder access
 
 CI runs on Python 3.12 and uploads JUnit XML results (`.github/workflows/test-lint.yml`).

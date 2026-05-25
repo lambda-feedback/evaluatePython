@@ -1,24 +1,24 @@
+import json
 import sys
 
 from lf_toolkit.shared.params import Params
 
 from .evaluation import evaluation_function
 
+
 def dev():
-    """Run the evaluation function from the command line for development purposes.
-
-    Usage: python -m evaluation_function.dev <answer> <response>
-    """
-    if len(sys.argv) < 3:
-        print("Usage: python -m evaluation_function.dev <answer> <response>")
+    if len(sys.argv) < 2:
+        print("Usage: python -m evaluation_function.dev <response> [answer] [params_json]")
+        print('Example: python -m evaluation_function.dev "print(5*5)" "" \'{"mode":"demo"}\'')
         return
-    
-    answer = sys.argv[1]
-    response = sys.argv[2]
 
-    result = evaluation_function(answer, response, Params())
+    response = sys.argv[1]
+    answer = sys.argv[2] if len(sys.argv) > 2 else ""
+    params = Params(json.loads(sys.argv[3])) if len(sys.argv) > 3 else Params({"mode": "demo"})
 
+    result = evaluation_function(response, answer, params)
     print(result.to_dict())
+
 
 if __name__ == "__main__":
     dev()

@@ -1,3 +1,164 @@
-# YourFunctionName
+# evaluatePython — Teacher Guide
 
-Teacher-facing documentation for this function.
+## What this function does
+
+`evaluatePython` runs a student's Python code submission and checks it against criteria you define. You choose how it is graded:
+
+| Mode | Use when… |
+|------|-----------|
+| `demo` | You want students to explore and see their output — no grading |
+| `io_test` | The program reads from stdin and writes to stdout |
+| `unit_test` | The program defines functions/classes you want to test directly |
+
+---
+
+## Mode: `demo`
+
+Runs the student's code and shows them their output. No pass/fail verdict is given. Useful for exploratory exercises or visualisation tasks.
+
+**Params**
+```json
+{ "mode": "demo" }
+```
+
+Students see their stdout and any matplotlib figures they produced.
+
+---
+
+## Mode: `io_test`
+
+Runs the student's code once per test case, feeding it a string via stdin and comparing its stdout to an expected output.
+
+**Params**
+```json
+{
+  "mode": "io_test",
+  "tests": [
+    {
+      "input":           "5\n",
+      "expected_output": "25\n"
+    }
+  ]
+}
+```
+
+### Test case fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `input` | No | Text sent to the program's stdin. Use `\n` for newlines. Omit or use `""` if the program reads no input. |
+| `expected_output` | Yes | The exact stdout the program should produce. Trailing whitespace is ignored during comparison. |
+| `hidden` | No | Set to `true` to hide the input and expected output from the student. They see only "Hidden test N: passed/failed." |
+
+### Tips
+
+- Use `hidden: true` for mark-scheme test cases students should not be able to reverse-engineer.
+- You can mix visible and hidden tests in the same question.
+- Matplotlib figures produced during a passing or failing test are shown to the student.
+- A 25-second per-test timeout applies; timed-out tests count as failures.
+
+### Example — square a number
+
+Student code:
+```python
+n = int(input())
+print(n * n)
+```
+
+Params:
+```json
+{
+  "mode": "io_test",
+  "tests": [
+    { "input": "5\n",  "expected_output": "25\n" },
+    { "input": "0\n",  "expected_output": "0\n"  },
+    { "input": "-3\n", "expected_output": "9\n", "hidden": true }
+  ]
+}
+```
+
+---
+
+## Mode: `unit_test`
+
+Runs the student's code and then calls test functions you write. The student must define functions or classes that your tests exercise directly — there is no stdin/stdout comparison.
+
+**Params**
+```json
+{
+  "mode": "unit_test",
+  "test_code": "<your test code as a string>"
+}
+```
+
+### Writing test functions
+
+You can write tests in three styles:
+
+**Plain functions** (simplest):
+```python
+def test_positive():
+    assert square(5) == 25
+
+def test_zero():
+    assert square(0) == 0
+```
+
+**`unittest.TestCase`** (for more structured tests):
+```python
+import unittest
+
+class SquareTests(unittest.TestCase):
+    def test_positive(self):
+        self.assertEqual(square(5), 25)
+
+    def test_negative(self):
+        self.assertEqual(square(-3), 9)
+```
+
+**Hypothesis** (property-based testing — generates many random inputs automatically):
+```python
+from hypothesis import given, settings
+import hypothesis.strategies as st
+
+@given(st.integers(-100, 100))
+@settings(max_examples=50)
+def test_square_is_nonnegative(n):
+    assert square(n) >= 0
+```
+
+### Tips
+
+- Each `test_*` function counts as one test in the summary.
+- Use assertion messages to give students a hint when they fail: `assert square(5) == 25, "square(5) should be 25"`.
+- If the student's code raises an exception at module level (e.g. a syntax or runtime error outside any function), all tests are reported as an error.
+- Student `print()` calls do not affect test results.
+- A 25-second total timeout applies to the entire execution.
+
+### Example — testing a `square` function
+
+Student code:
+```python
+def square(n):
+    return n * n
+```
+
+Params:
+```json
+{
+  "mode": "unit_test",
+  "test_code": "def test_positive():\n    assert square(5) == 25, 'square(5) should be 25'\ndef test_zero():\n    assert square(0) == 0\ndef test_negative():\n    assert square(-3) == 9\n"
+}
+```
+
+---
+
+## Security restrictions
+
+Students' code is checked before execution. The following are blocked and will return an error before the code runs:
+
+- Importing: `os`, `sys`, `subprocess`, `socket`, `requests`, `pathlib`, and other system/network modules
+- Calling: `exec`, `eval`, `compile`, `open`, `__import__`
+- Accessing dunder attributes (`__class__`, `__dict__`, etc.)
+
+These restrictions cannot be bypassed; attempts result in an error feedback item rather than execution.
