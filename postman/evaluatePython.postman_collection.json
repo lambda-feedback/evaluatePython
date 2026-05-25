@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "evaluatePython",
-    "description": "Test suite for the evaluatePython Lambda Feedback evaluation function.\n\nThe service is fronted by Shimmy, which exposes a single `POST /` HTTP endpoint on port 8080. The command (`eval`, `preview`, `healthcheck`) is selected via a `command` request header (absent = `eval`).\n\n## Running locally\n\nWith Shimmy installed:\n```\nshimmy -c python -a -m -a evaluation_function.main -i ipc\n```\n\nOr via Docker:\n```\ndocker run -p 8080:8080 <image>\n```\n\n## Collection variable\n\n`baseUrl` — default `http://localhost:8080`. Override to point at staging or production.",
+    "description": "Test suite for the evaluatePython Lambda Feedback evaluation function.\n\nThe service is fronted by Shimmy, which exposes a single `POST /` HTTP endpoint on port 8080. The command (`eval`, `preview`, `healthcheck`) is selected via a `command` request header (absent = `eval`).\n\n## Running locally\n\nWith Shimmy installed:\n```\nshimmy -c python -a -m -a evaluation_function.main -i ipc\n```\n\nOr via Docker:\n```\ndocker run -p 8080:8080 <image>\n```\n\n## Collection variable\n\n`baseUrl` — default `http://localhost:8080`. Override to point at staging or production.\n\n## Modes\n\n`params.mode` is required for all eval requests:\n- `\"demo\"` — run code and show output, no test validation\n- `\"io_test\"` — run code against stdin/stdout test cases",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -27,7 +27,7 @@
           "    url: baseUrl,",
           "    method: 'POST',",
           "    header: { 'Content-Type': 'application/json' },",
-          "    body: { mode: 'raw', raw: JSON.stringify({ response: 'print(1)', answer: '', params: { tests: [] } }) }",
+          "    body: { mode: 'raw', raw: JSON.stringify({ response: 'print(1)', answer: '', params: { mode: 'demo' } }) }",
           "}, (err, res) => {",
           "    if (err) {",
           "        console.warn('Warmup failed:', err);",
@@ -53,7 +53,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"3\\n\", \"expected_output\": \"9\\n\",  \"hidden\": false }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"3\\n\", \"expected_output\": \"9\\n\",  \"hidden\": false }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -107,7 +107,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"3\\n\", \"expected_output\": \"99\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"3\\n\", \"expected_output\": \"99\\n\", \"hidden\": false }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -160,7 +160,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"print(\\\"wrong\\\")\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"print(\\\"wrong\\\")\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -210,7 +210,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"raise ValueError('oops')\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"raise ValueError('oops')\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -263,7 +263,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": true }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": true }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -312,7 +312,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"999\\n\", \"hidden\": true }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"999\\n\", \"hidden\": true }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -359,7 +359,7 @@
           ]
         },
         {
-          "name": "07 – Demo mode (no tests)",
+          "name": "07 – Demo mode",
           "request": {
             "method": "POST",
             "header": [
@@ -367,7 +367,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"print(\\\"hello world\\\")\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": []\n  }\n}",
+              "raw": "{\n  \"response\": \"print(\\\"hello world\\\")\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"demo\"\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -415,7 +415,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"while True: pass\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"x\", \"hidden\": false }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"while True: pass\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"x\", \"hidden\": false }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -460,7 +460,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"7\\n\", \"expected_output\": \"999\\n\", \"hidden\": true }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"7\\n\", \"expected_output\": \"999\\n\", \"hidden\": true }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -515,7 +515,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"x = 1 + 1\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"\", \"hidden\": false }\n    ]\n  }\n}",
+              "raw": "{\n  \"response\": \"x = 1 + 1\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"\", \"hidden\": false }\n    ]\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -553,6 +553,49 @@
           ]
         },
         {
+          "name": "11 – numpy scientific library",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"import numpy as np\\nprint(int(np.array([1, 2, 3]).sum()))\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"6\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 1/1 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('1/1 tests passed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "20 – Image generation (demo mode)",
           "request": {
             "method": "POST",
@@ -561,7 +604,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"response\": \"import matplotlib.pyplot as plt\\nplt.plot([1, 2, 3], [1, 4, 9])\\nplt.title('squares')\\n\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": []\n  }\n}",
+              "raw": "{\n  \"response\": \"import matplotlib.pyplot as plt\\nplt.plot([1, 2, 3], [1, 4, 9])\\nplt.title('squares')\\n\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"demo\"\n  }\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
@@ -598,49 +641,6 @@
                   "    // credentials. Skip or ignore locally if upload is not configured.",
                   "    const feedback = pm.response.json().result.feedback;",
                   "    pm.expect(feedback).to.include('![Plot 1]');",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "11 – numpy scientific library",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"response\": \"import numpy as np\\nprint(int(np.array([1, 2, 3]).sum()))\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"6\\n\", \"hidden\": false }\n    ]\n  }\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": ["pm.request.timeout = 40000;"]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => {",
-                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
-                  "});",
-                  "",
-                  "pm.test('is_correct is true', () => {",
-                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
-                  "});",
-                  "",
-                  "pm.test('Feedback reports 1/1 tests passed', () => {",
-                  "    pm.expect(pm.response.json().result.feedback).to.include('1/1 tests passed');",
                   "});"
                 ]
               }
@@ -917,7 +917,7 @@
     },
     {
       "name": "Validation",
-      "description": "Tests that Shimmy rejects malformed requests that fail JSON schema validation.",
+      "description": "Tests that Shimmy rejects malformed requests that fail JSON schema validation, and that the evaluation function rejects unknown or missing modes.",
       "item": [
         {
           "name": "18 – Missing/null answer field",
@@ -981,6 +981,49 @@
                   "    pm.expect(isErrorStatus || hasErrorBody,",
                   "        'Expected HTTP 4xx or an error field in the body'",
                   "    ).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21 – Missing mode returns error feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"print(1)\",\n  \"answer\": \"\",\n  \"params\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 10000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback mentions mode', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('mode');",
                   "});"
                 ]
               }

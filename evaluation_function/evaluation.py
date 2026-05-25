@@ -76,23 +76,20 @@ def _upload_plots(images: list[Image.Image]) -> list[str]:
     return result
 
 
-def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
-    tests = params.get("tests", [])
-    result = Result()
-
-    if not tests:
-        stdout, stderr, timed_out, images = _run_code(str(response), "")
-        if timed_out:
-            result.add_feedback("error", f"Code timed out after {_TIMEOUT}s.")
-        elif stderr and not stdout:
-            result.add_feedback("error", _code_block("Error", stderr.strip()))
-        else:
-            parts = [_code_block("Output", stdout.rstrip() or "(no output)")]
-            parts.extend(_upload_plots(images))
-            result.add_feedback("output", "\n\n".join(parts))
-        return result
+def _evaluate_demo(response: str, result: Result) -> Result:
+    stdout, stderr, timed_out, images = _run_code(response, "")
+    if timed_out:
+        result.add_feedback("error", f"Code timed out after {_TIMEOUT}s.")
+    elif stderr and not stdout:
+        result.add_feedback("error", _code_block("Error", stderr.strip()))
+    else:
+        parts = [_code_block("Output", stdout.rstrip() or "(no output)")]
+        parts.extend(_upload_plots(images))
+        result.add_feedback("output", "\n\n".join(parts))
+    return result
 
 
+def _evaluate_io(response: str, tests: list, result: Result) -> Result:
     passed = 0
 
     for i, test in enumerate(tests, 1):
@@ -100,7 +97,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         expected = test.get("expected_output", "").rstrip()
         hidden = test.get("hidden", False)
 
-        stdout, stderr, timed_out, images = _run_code(str(response), stdin)
+        stdout, stderr, timed_out, images = _run_code(response, stdin)
         actual = stdout.rstrip()
         label = f"Hidden test {i}" if hidden else f"Test {i}"
 
@@ -144,3 +141,15 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     result.is_correct = passed == len(tests)
     result.add_feedback("summary", f"{passed}/{len(tests)} tests passed.")
     return result
+
+
+def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
+    result = Result()
+    mode = params.get("mode")
+    if mode not in ("demo", "io_test"):
+        result.add_feedback("error", f"Unknown or missing mode: {mode!r}. Expected 'demo' or 'io_test'.")
+        return result
+
+    if mode == "demo":
+        return _evaluate_demo(str(response), result)
+    return _evaluate_io(str(response), params.get("tests", []), result)

@@ -11,7 +11,7 @@ _INFINITE_CODE = "while True: pass"
 
 
 def _params(*tests):
-    return {"tests": list(tests)}
+    return {"mode": "io_test", "tests": list(tests)}
 
 
 def _test(inp, expected, hidden=False):
@@ -54,10 +54,16 @@ class TestEvaluationFunction(unittest.TestCase):
         self.assertIn("```", result["feedback"])
 
     def test_no_tests(self):
-        result = evaluation_function(_SQUARE_CODE, None, {}).to_dict()
+        result = evaluation_function(_SQUARE_CODE, None, {"mode": "demo"}).to_dict()
 
         self.assertFalse(result["is_correct"])
         self.assertIn("```", result["feedback"])
+
+    def test_missing_mode(self):
+        result = evaluation_function(_SQUARE_CODE, None, {}).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("mode", result["feedback"])
 
 
 _PLOT_CODE = "import matplotlib.pyplot as plt\nplt.plot([1, 2, 3])\n"
@@ -73,7 +79,7 @@ class TestImageGeneration(unittest.TestCase):
 
     @patch("evaluation_function.evaluation.upload_image", return_value=_FAKE_URL)
     def test_single_plot_demo_mode(self, mock_upload):
-        result = evaluation_function(_PLOT_CODE, None, {}).to_dict()
+        result = evaluation_function(_PLOT_CODE, None, {"mode": "demo"}).to_dict()
         mock_upload.assert_called_once()
         self.assertIn("![Plot 1]", result["feedback"])
 
@@ -91,14 +97,14 @@ class TestImageGeneration(unittest.TestCase):
 
     @patch("evaluation_function.evaluation.upload_image", return_value=_FAKE_URL)
     def test_multiple_plots(self, mock_upload):
-        result = evaluation_function(_MULTI_PLOT_CODE, None, {}).to_dict()
+        result = evaluation_function(_MULTI_PLOT_CODE, None, {"mode": "demo"}).to_dict()
         self.assertEqual(mock_upload.call_count, 2)
         self.assertIn("![Plot 1]", result["feedback"])
         self.assertIn("![Plot 2]", result["feedback"])
 
     @patch("evaluation_function.evaluation.upload_image", side_effect=ImageUploadError)
     def test_upload_failure_graceful(self, mock_upload):
-        result = evaluation_function(_PLOT_CODE, None, {}).to_dict()
+        result = evaluation_function(_PLOT_CODE, None, {"mode": "demo"}).to_dict()
         self.assertNotIn("![Plot", result["feedback"])
 
     def test_run_code_captures_images(self):
