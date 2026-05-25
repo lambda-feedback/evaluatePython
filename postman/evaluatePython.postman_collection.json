@@ -1,0 +1,941 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "evaluatePython",
+    "description": "Test suite for the evaluatePython Lambda Feedback evaluation function.\n\nThe service is fronted by Shimmy, which exposes a single `POST /` HTTP endpoint on port 8080. The command (`eval`, `preview`, `healthcheck`) is selected via a `command` request header (absent = `eval`).\n\n## Running locally\n\nWith Shimmy installed:\n```\nshimmy -c python -a -m -a evaluation_function.main -i ipc\n```\n\nOr via Docker:\n```\ndocker run -p 8080:8080 <image>\n```\n\n## Collection variable\n\n`baseUrl` — default `http://localhost:8080`. Override to point at staging or production.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Warm up the Lambda function before the first request.",
+          "// AWS API Gateway kills any Lambda that takes >29 s, which happens on cold",
+          "// starts when the heavy scientific stack (numpy/scipy/pandas/matplotlib) loads.",
+          "// A lightweight eval call absorbs the cold-start penalty.",
+          "const baseUrl = pm.collectionVariables.get('baseUrl');",
+          "pm.sendRequest({",
+          "    url: baseUrl,",
+          "    method: 'POST',",
+          "    header: { 'Content-Type': 'application/json' },",
+          "    body: { mode: 'raw', raw: JSON.stringify({ response: 'print(1)', answer: '', params: { tests: [] } }) }",
+          "}, (err, res) => {",
+          "    if (err) {",
+          "        console.warn('Warmup failed:', err);",
+          "    } else {",
+          "        console.log('Warmup status:', res.code);",
+          "    }",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Eval",
+      "description": "Tests for the `eval` command. Sends Python code and test cases; checks correctness, feedback content, and hidden-test data isolation.",
+      "item": [
+        {
+          "name": "01 – All tests pass",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"3\\n\", \"expected_output\": \"9\\n\",  \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Response shape is correct', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('command', 'eval');",
+                  "    pm.expect(json).to.have.property('result');",
+                  "    pm.expect(json).to.not.have.property('error');",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 2/2 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('2/2 tests passed');",
+                  "});",
+                  "",
+                  "pm.test('Feedback contains code blocks', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('```');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 – Partial test failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"3\\n\", \"expected_output\": \"99\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 1/2 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('1/2 tests passed');",
+                  "});",
+                  "",
+                  "pm.test('Feedback shows output diff for failing test', () => {",
+                  "    const feedback = pm.response.json().result.feedback;",
+                  "    pm.expect(feedback).to.include('Your output');",
+                  "    pm.expect(feedback).to.include('Expected');",
+                  "});",
+                  "",
+                  "pm.test('Feedback marks passing test', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('Test 1: passed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03 – All tests fail",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"print(\\\"wrong\\\")\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 0/1 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('0/1 tests passed');",
+                  "});",
+                  "",
+                  "pm.test('Feedback shows actual vs expected output', () => {",
+                  "    const feedback = pm.response.json().result.feedback;",
+                  "    pm.expect(feedback).to.include('Your output');",
+                  "    pm.expect(feedback).to.include('Expected');",
+                  "    pm.expect(feedback).to.include('wrong');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04 – Runtime error",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"raise ValueError('oops')\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback mentions runtime error', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('runtime error');",
+                  "});",
+                  "",
+                  "pm.test('Feedback includes error code block', () => {",
+                  "    const feedback = pm.response.json().result.feedback;",
+                  "    pm.expect(feedback).to.include('Error');",
+                  "    pm.expect(feedback).to.include('```');",
+                  "});",
+                  "",
+                  "pm.test('Feedback includes the exception message', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('oops');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "05 – Hidden test passes (label only, no detail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": true }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback says Hidden test 1: passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('Hidden test 1: passed');",
+                  "});",
+                  "",
+                  "pm.test('Feedback does not reveal test input/output', () => {",
+                  "    const feedback = pm.response.json().result.feedback;",
+                  "    pm.expect(feedback).to.not.include('Input:');",
+                  "    pm.expect(feedback).to.not.include('Output:');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "06 – Hidden test fails (no data leak)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"999\\n\", \"hidden\": true }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback mentions hidden test label', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('Hidden test 1');",
+                  "});",
+                  "",
+                  "pm.test('Expected output not leaked', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.not.include('999');",
+                  "});",
+                  "",
+                  "pm.test('Input value not leaked', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.not.include('Input:');",
+                  "});",
+                  "",
+                  "pm.test('Actual output not shown for hidden test', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.not.include('Your output');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "07 – Demo mode (no tests)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"print(\\\"hello world\\\")\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": []\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Response is eval command', () => {",
+                  "    pm.expect(pm.response.json().command).to.equal('eval');",
+                  "});",
+                  "",
+                  "pm.test('Feedback shows output block', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('Output');",
+                  "});",
+                  "",
+                  "pm.test('Feedback contains the printed value', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('hello world');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08 – Timeout (SLOW – 35 s)",
+          "description": "Submits an infinite loop. Expect the service to kill the process after 30 s and return a timeout message. This request takes ~30 seconds to complete.",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"while True: pass\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"x\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.request.timeout = 35000;"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports timeout', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('timed out');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 – Mixed visible pass + hidden fail",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"n = int(input())\\nprint(n * n)\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"5\\n\", \"expected_output\": \"25\\n\", \"hidden\": false },\n      { \"input\": \"7\\n\", \"expected_output\": \"999\\n\", \"hidden\": true }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false (hidden test fails)', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Visible test shown as passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('Test 1: passed');",
+                  "});",
+                  "",
+                  "pm.test('Hidden test label present', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('Hidden test 2');",
+                  "});",
+                  "",
+                  "pm.test('Hidden expected output not leaked', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.not.include('999');",
+                  "});",
+                  "",
+                  "pm.test('Hidden input not leaked', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.not.include('7');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 – Code with no output",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"x = 1 + 1\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true (empty == empty)', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback shows (no output) placeholder or passes', () => {",
+                  "    const feedback = pm.response.json().result.feedback;",
+                  "    pm.expect(feedback).to.satisfy(f =>",
+                  "        f.includes('(no output)') || f.includes('passed')",
+                  "    );",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 – numpy scientific library",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"import numpy as np\\nprint(int(np.array([1, 2, 3]).sum()))\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"6\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 1/1 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('1/1 tests passed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Preview",
+      "description": "Tests for the `preview` command. Validates Python code via AST analysis before execution — checks syntax and blocks dangerous imports/builtins.",
+      "item": [
+        {
+          "name": "12 – Valid Python",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "command", "value": "preview" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"x = 1 + 2\\nprint(x)\",\n  \"params\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Response is preview command', () => {",
+                  "    pm.expect(pm.response.json().command).to.equal('preview');",
+                  "});",
+                  "",
+                  "pm.test('Feedback says Valid Python syntax', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.equal('Valid Python syntax.');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 – Syntax error",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "command", "value": "preview" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"def foo(\",\n  \"params\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports SyntaxError', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include('SyntaxError');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 – Blocked import: os",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "command", "value": "preview" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"import os\\nprint(os.getcwd())\",\n  \"params\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports unsafe code', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include('Unsafe code detected');",
+                  "});",
+                  "",
+                  "pm.test('Feedback names the blocked module', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include(\"import of 'os' is not allowed\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15 – Blocked from-import: subprocess",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "command", "value": "preview" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"from subprocess import run\",\n  \"params\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports unsafe code', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include('Unsafe code detected');",
+                  "});",
+                  "",
+                  "pm.test('Feedback names the blocked module', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include(\"import of 'subprocess' is not allowed\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16 – Blocked builtin: exec()",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "command", "value": "preview" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"exec(\\\"print('hi')\\\")\",\n  \"params\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports unsafe code', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include('Unsafe code detected');",
+                  "});",
+                  "",
+                  "pm.test('Feedback names the blocked builtin', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include(\"use of 'exec()' is not allowed\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17 – Blocked dunder attribute",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "command", "value": "preview" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"x = [].__class__\",\n  \"params\": {}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports unsafe code', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include('Unsafe code detected');",
+                  "});",
+                  "",
+                  "pm.test('Feedback names the blocked attribute', () => {",
+                  "    pm.expect(pm.response.json().result.preview.feedback).to.include(\"access to '__class__' is not allowed\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Validation",
+      "description": "Tests that Shimmy rejects malformed requests that fail JSON schema validation.",
+      "item": [
+        {
+          "name": "18 – Missing/null answer field",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"print(1)\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Request is rejected (400 or error body)', () => {",
+                  "    const status = pm.response.code;",
+                  "    const json   = pm.response.json();",
+                  "    const isErrorStatus = status === 400 || status === 422;",
+                  "    const hasErrorBody  = json.hasOwnProperty('error');",
+                  "    pm.expect(isErrorStatus || hasErrorBody,",
+                  "        'Expected HTTP 4xx or an error field in the body'",
+                  "    ).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 – Missing required field: response",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": null\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Request is rejected (400 or error body)', () => {",
+                  "    const status = pm.response.code;",
+                  "    const json   = pm.response.json();",
+                  "    const isErrorStatus = status === 400 || status === 422;",
+                  "    const hasErrorBody  = json.hasOwnProperty('error');",
+                  "    pm.expect(isErrorStatus || hasErrorBody,",
+                  "        'Expected HTTP 4xx or an error field in the body'",
+                  "    ).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
