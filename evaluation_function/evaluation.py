@@ -8,7 +8,7 @@ from PIL import Image
 from lf_toolkit.evaluation import Result, Params
 from lf_toolkit.evaluation.image_upload import upload_image, ImageUploadError
 
-_TIMEOUT = 30
+_TIMEOUT = 25
 _UPLOAD_FOLDER = "evaluatePython"
 
 _PREAMBLE_TEMPLATE = """\
