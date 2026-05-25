@@ -44,7 +44,7 @@ def _run_code(code: str, stdin: str) -> tuple[str, str, bool, list[Image.Image]]
             capture_output=True,
             text=True,
             timeout=_TIMEOUT,
-            env={**os.environ, "MPLBACKEND": "Agg"},
+            env={**os.environ, "MPLBACKEND": "Agg", "MPLCONFIGDIR": "/tmp"},
         )
         images = []
         for fn in sorted(os.listdir(plot_dir)):

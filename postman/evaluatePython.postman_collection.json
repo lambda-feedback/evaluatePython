@@ -553,6 +553,58 @@
           ]
         },
         {
+          "name": "20 – Image generation (demo mode)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"import matplotlib.pyplot as plt\\nplt.plot([1, 2, 3], [1, 4, 9])\\nplt.title('squares')\\n\",\n  \"answer\": \"\",\n  \"params\": {\n    \"tests\": []\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Response is eval command with no error', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.command).to.equal('eval');",
+                  "    pm.expect(json).to.not.have.property('error');",
+                  "});",
+                  "",
+                  "pm.test('Feedback contains Output block (code ran successfully)', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('Output');",
+                  "});",
+                  "",
+                  "pm.test('Feedback contains uploaded plot link (requires cloud credentials)', () => {",
+                  "    // This assertion only passes when the server has valid S3/image-upload",
+                  "    // credentials. Skip or ignore locally if upload is not configured.",
+                  "    const feedback = pm.response.json().result.feedback;",
+                  "    pm.expect(feedback).to.include('![Plot 1]');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "11 – numpy scientific library",
           "request": {
             "method": "POST",
