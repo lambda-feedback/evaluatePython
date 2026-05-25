@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -29,6 +30,50 @@ def _capture_plots():
 """
 
 _CAPTURE_CALL = "_capture_plots()\n"
+
+_UNIT_RUNNER_TEMPLATE = """
+import json as _json
+import unittest as _ut
+
+_unit_results = []
+
+class _UnitTrackingResult(_ut.TestResult):
+    def __init__(self):
+        super().__init__()
+        self.successes = []
+    def addSuccess(self, test):
+        super().addSuccess(test)
+        self.successes.append(test)
+
+_unit_tc_classes = [v for v in globals().values()
+                    if isinstance(v, type) and issubclass(v, _ut.TestCase) and v is not _ut.TestCase]
+if _unit_tc_classes:
+    _unit_suite = _ut.TestSuite()
+    for _unit_cls in _unit_tc_classes:
+        _unit_suite.addTests(_ut.TestLoader().loadTestsFromTestCase(_unit_cls))
+    _unit_tr = _UnitTrackingResult()
+    _unit_suite.run(_unit_tr)
+    for _unit_t in _unit_tr.successes:
+        _unit_results.append({{'name': _unit_t.id().split('.')[-1], 'status': 'pass'}})
+    for _unit_t, _unit_e in _unit_tr.failures:
+        _unit_results.append({{'name': _unit_t.id().split('.')[-1], 'status': 'fail', 'message': _unit_e}})
+    for _unit_t, _unit_e in _unit_tr.errors:
+        _unit_results.append({{'name': _unit_t.id().split('.')[-1], 'status': 'error', 'message': _unit_e}})
+
+_unit_plain = [(n, f) for n, f in sorted(globals().items())
+               if n.startswith('test_') and callable(f) and not isinstance(f, type)]
+for _unit_name, _unit_fn in _unit_plain:
+    try:
+        _unit_fn()
+        _unit_results.append({{'name': _unit_name, 'status': 'pass'}})
+    except AssertionError as _unit_exc:
+        _unit_results.append({{'name': _unit_name, 'status': 'fail', 'message': str(_unit_exc)}})
+    except Exception as _unit_exc:
+        _unit_results.append({{'name': _unit_name, 'status': 'error', 'message': repr(_unit_exc)}})
+
+with open({results_path!r}, 'w') as _unit_f:
+    _json.dump(_unit_results, _unit_f)
+"""
 
 
 def _run_code(code: str, stdin: str) -> tuple[str, str, bool, list[Image.Image]]:
@@ -143,13 +188,62 @@ def _evaluate_io(response: str, tests: list, result: Result) -> Result:
     return result
 
 
+def _evaluate_unit(response: str, test_code: str, result: Result) -> Result:
+    if not test_code.strip():
+        result.add_feedback("error", "No test code provided for unit_test mode.")
+        return result
+
+    results_path = tempfile.mktemp(suffix=".json")
+    runner = _UNIT_RUNNER_TEMPLATE.format(results_path=results_path)
+    combined = response + "\n\n" + test_code + runner
+    stdout, stderr, timed_out, _ = _run_code(combined, "")
+
+    test_results = None
+    try:
+        if timed_out:
+            result.add_feedback("error", f"Code timed out after {_TIMEOUT}s.")
+        elif not os.path.exists(results_path):
+            msg = _code_block("Error", stderr.strip()) if stderr else "Unknown error — no results produced."
+            result.add_feedback("error", msg)
+        else:
+            with open(results_path) as f:
+                test_results = json.load(f)
+    finally:
+        if os.path.exists(results_path):
+            os.unlink(results_path)
+
+    if test_results is None:
+        return result
+
+    passed = 0
+    for r in test_results:
+        name, status = r["name"], r["status"]
+        if status == "pass":
+            passed += 1
+            result.add_feedback("pass", f"{name}: passed.")
+        else:
+            msg = r.get("message", "")
+            body = f"{name}: {'failed' if status == 'fail' else 'runtime error'}."
+            if msg:
+                label = "AssertionError" if status == "fail" else "Error"
+                body += f"\n\n{_code_block(label, msg.strip())}"
+            result.add_feedback("fail", body)
+
+    total = len(test_results)
+    result.is_correct = total > 0 and passed == total
+    result.add_feedback("summary", f"{passed}/{total} tests passed.")
+    return result
+
+
 def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     result = Result()
     mode = params.get("mode")
-    if mode not in ("demo", "io_test"):
-        result.add_feedback("error", f"Unknown or missing mode: {mode!r}. Expected 'demo' or 'io_test'.")
+    if mode not in ("demo", "io_test", "unit_test"):
+        result.add_feedback("error", f"Unknown or missing mode: {mode!r}. Expected 'demo', 'io_test', or 'unit_test'.")
         return result
 
     if mode == "demo":
         return _evaluate_demo(str(response), result)
-    return _evaluate_io(str(response), params.get("tests", []), result)
+    if mode == "io_test":
+        return _evaluate_io(str(response), params.get("tests", []), result)
+    return _evaluate_unit(str(response), params.get("test_code", ""), result)

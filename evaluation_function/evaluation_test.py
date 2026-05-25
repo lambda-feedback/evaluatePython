@@ -112,3 +112,72 @@ class TestImageGeneration(unittest.TestCase):
         self.assertFalse(timed_out)
         self.assertEqual(len(images), 1)
         self.assertEqual(images[0].format, "PNG")
+
+
+_SQUARE_FN = "def square(n): return n * n"
+_WRONG_SQUARE_FN = "def square(n): return n + 1"
+_CRASH_FN = "raise ValueError('boom')"
+
+_SQUARE_TESTS = (
+    "def test_positive():\n"
+    "    assert square(5) == 25, 'expected 25'\n"
+    "def test_zero():\n"
+    "    assert square(0) == 0\n"
+)
+
+_SQUARE_TESTS_UNITTEST = (
+    "import unittest\n"
+    "class SquareTest(unittest.TestCase):\n"
+    "    def test_positive(self):\n"
+    "        self.assertEqual(square(5), 25)\n"
+    "    def test_zero(self):\n"
+    "        self.assertEqual(square(0), 0)\n"
+)
+
+
+def _unit_params(test_code):
+    return {"mode": "unit_test", "test_code": test_code}
+
+
+class TestUnitTestMode(unittest.TestCase):
+
+    def test_all_pass(self):
+        result = evaluation_function(_SQUARE_FN, None, _unit_params(_SQUARE_TESTS)).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("2/2 tests passed", result["feedback"])
+        self.assertIn("test_positive: passed", result["feedback"])
+        self.assertIn("test_zero: passed", result["feedback"])
+
+    def test_assertion_fail(self):
+        result = evaluation_function(_WRONG_SQUARE_FN, None, _unit_params(_SQUARE_TESTS)).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("0/2 tests passed", result["feedback"])
+        self.assertIn("failed", result["feedback"])
+        self.assertIn("expected 25", result["feedback"])
+
+    def test_unittest_style(self):
+        result = evaluation_function(_SQUARE_FN, None, _unit_params(_SQUARE_TESTS_UNITTEST)).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("2/2 tests passed", result["feedback"])
+
+    def test_module_level_crash(self):
+        result = evaluation_function(_CRASH_FN, None, _unit_params(_SQUARE_TESTS)).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("boom", result["feedback"])
+
+    def test_empty_test_code(self):
+        result = evaluation_function(_SQUARE_FN, None, _unit_params("")).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("No test code", result["feedback"])
+
+    def test_student_print_no_pollution(self):
+        code_with_print = _SQUARE_FN + "\nprint('hello')"
+        result = evaluation_function(code_with_print, None, _unit_params(_SQUARE_TESTS)).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("2/2 tests passed", result["feedback"])

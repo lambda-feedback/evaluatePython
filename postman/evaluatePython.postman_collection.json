@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "evaluatePython",
-    "description": "Test suite for the evaluatePython Lambda Feedback evaluation function.\n\nThe service is fronted by Shimmy, which exposes a single `POST /` HTTP endpoint on port 8080. The command (`eval`, `preview`, `healthcheck`) is selected via a `command` request header (absent = `eval`).\n\n## Running locally\n\nWith Shimmy installed:\n```\nshimmy -c python -a -m -a evaluation_function.main -i ipc\n```\n\nOr via Docker:\n```\ndocker run -p 8080:8080 <image>\n```\n\n## Collection variable\n\n`baseUrl` — default `http://localhost:8080`. Override to point at staging or production.\n\n## Modes\n\n`params.mode` is required for all eval requests:\n- `\"demo\"` — run code and show output, no test validation\n- `\"io_test\"` — run code against stdin/stdout test cases",
+    "description": "Test suite for the evaluatePython Lambda Feedback evaluation function.\n\nThe service is fronted by Shimmy, which exposes a single `POST /` HTTP endpoint on port 8080. The command (`eval`, `preview`, `healthcheck`) is selected via a `command` request header (absent = `eval`).\n\n## Running locally\n\nWith Shimmy installed:\n```\nshimmy -c python -a -m -a evaluation_function.main -i ipc\n```\n\nOr via Docker:\n```\ndocker run -p 8080:8080 <image>\n```\n\n## Collection variable\n\n`baseUrl` — default `http://localhost:8080`. Override to point at staging or production.\n\n## Modes\n\n`params.mode` is required for all eval requests:\n- `\"demo\"` — run code and show output, no test validation\n- `\"io_test\"` — run code against stdin/stdout test cases\n- `\"unit_test\"` — run teacher-written `def test_xxx()` or `unittest.TestCase` functions against student code",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -589,6 +589,106 @@
                   "",
                   "pm.test('Feedback reports 1/1 tests passed', () => {",
                   "    pm.expect(pm.response.json().result.feedback).to.include('1/1 tests passed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22 – unit_test all pass",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"def square(n): return n * n\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"unit_test\",\n    \"test_code\": \"def test_positive():\\n    assert square(5) == 25, 'expected 25'\\ndef test_zero():\\n    assert square(0) == 0\\n\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 2/2 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('2/2 tests passed');",
+                  "});",
+                  "",
+                  "pm.test('Individual test names shown as passed', () => {",
+                  "    const feedback = pm.response.json().result.feedback;",
+                  "    pm.expect(feedback).to.include('test_positive: passed');",
+                  "    pm.expect(feedback).to.include('test_zero: passed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23 – unit_test assertion failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"def square(n): return n + 1\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"unit_test\",\n    \"test_code\": \"def test_positive():\\n    assert square(5) == 25, 'expected 25'\\ndef test_zero():\\n    assert square(0) == 0\\n\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is false', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.false;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 0/2 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('0/2 tests passed');",
+                  "});",
+                  "",
+                  "pm.test('Feedback includes assertion message', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('expected 25');",
+                  "});",
+                  "",
+                  "pm.test('Feedback marks test as failed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('failed');",
                   "});"
                 ]
               }
