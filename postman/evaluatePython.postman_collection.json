@@ -786,6 +786,88 @@
           ]
         },
         {
+          "name": "26 – REPL expression in demo mode",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"3.14159*2*5\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"demo\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('Bare expression output is auto-displayed (REPL style)', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('31.4159');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27 – REPL expression in io_test mode",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"3.14159*2*5\",\n  \"answer\": \"\",\n  \"params\": {\n    \"mode\": \"io_test\",\n    \"tests\": [\n      { \"input\": \"\", \"expected_output\": \"31.4159\\n\", \"hidden\": false }\n    ]\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}", "host": ["{{baseUrl}}"] }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.request.timeout = 40000;"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => {",
+                  "    pm.expect(pm.response.code, 'Body: ' + pm.response.text()).to.equal(200);",
+                  "});",
+                  "",
+                  "pm.test('is_correct is true', () => {",
+                  "    pm.expect(pm.response.json().result.is_correct).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test('Feedback reports 1/1 tests passed', () => {",
+                  "    pm.expect(pm.response.json().result.feedback).to.include('1/1 tests passed');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "20 – Image generation (demo mode)",
           "request": {
             "method": "POST",

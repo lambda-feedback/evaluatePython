@@ -109,6 +109,28 @@ class TestInjectMode(unittest.TestCase):
         self.assertTrue(result["is_correct"])
 
 
+class TestReplExpression(unittest.TestCase):
+
+    def test_bare_expression_demo(self):
+        result = evaluation_function("3.14159*2*5", None, {"mode": "demo"}).to_dict()
+        self.assertIn("31.4159", result["feedback"])
+
+    def test_bare_expression_io_test(self):
+        params = _params(_test("", "31.4159\n"))
+        result = evaluation_function("3.14159*2*5", None, params).to_dict()
+        self.assertTrue(result["is_correct"])
+
+    def test_existing_print_not_double_wrapped(self):
+        params = _params(_test("", "31.4159\n"))
+        result = evaluation_function("print(31.4159)", None, params).to_dict()
+        self.assertTrue(result["is_correct"])
+
+    def test_assignment_no_auto_print(self):
+        params = _params(_test("", "5\n"))
+        result = evaluation_function("x = 5", None, params).to_dict()
+        self.assertFalse(result["is_correct"])
+
+
 _PLOT_CODE = "import matplotlib.pyplot as plt\nplt.plot([1, 2, 3])\n"
 _MULTI_PLOT_CODE = (
     "import matplotlib.pyplot as plt\n"

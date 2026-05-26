@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import shutil
@@ -76,6 +77,21 @@ with open({results_path!r}, 'w') as _unit_f:
 """
 
 
+def _add_repl_print(code: str) -> str:
+    """Wrap last bare expression in print(repr(...)) for REPL-style output."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return code
+    if not tree.body or not isinstance(tree.body[-1], ast.Expr):
+        return code
+    node = tree.body[-1].value
+    if (isinstance(node, ast.Call) and
+            isinstance(node.func, ast.Name) and node.func.id == 'print'):
+        return code
+    return code + f"\nprint(repr({ast.unparse(node)}))"
+
+
 def _run_code(code: str, stdin: str) -> tuple[str, str, bool, list[Image.Image]]:
     plot_dir = tempfile.mkdtemp()
     preamble = _PREAMBLE_TEMPLATE.format(plot_dir=plot_dir)
@@ -122,6 +138,7 @@ def _upload_plots(images: list[Image.Image]) -> list[str]:
 
 
 def _evaluate_demo(response: str, result: Result) -> Result:
+    response = _add_repl_print(response)
     stdout, stderr, timed_out, images = _run_code(response, "")
     if timed_out:
         result.add_feedback("error", f"Code timed out after {_TIMEOUT}s.")
@@ -136,6 +153,7 @@ def _evaluate_demo(response: str, result: Result) -> Result:
 
 def _evaluate_io(response: str, tests: list, result: Result) -> Result:
     passed = 0
+    response = _add_repl_print(response)
 
     for i, test in enumerate(tests, 1):
         inject = test.get("inject")
