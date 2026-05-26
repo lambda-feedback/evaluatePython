@@ -21,7 +21,7 @@ Runs the student's code and shows them their output. No pass/fail verdict is giv
 { "mode": "demo" }
 ```
 
-Students see their stdout and any matplotlib figures they produced.
+Students see their stdout and any matplotlib figures they produced. Bare expressions (e.g. `3.14 * 2 * 5`) print automatically without needing `print()`, just like a Jupyter notebook.
 
 ---
 
@@ -59,6 +59,32 @@ Each test case uses **either** `input` (student reads via `input()`) **or** `inj
 - You can mix visible and hidden tests in the same question.
 - Matplotlib figures produced during a passing or failing test are shown to the student.
 - A 25-second per-test timeout applies; timed-out tests count as failures.
+- Students can write bare expressions (e.g. `3.14 * r * r`) without `print()` — the output is captured automatically.
+
+### Using the answer field as the reference solution
+
+If you set `"use_answer_as_expected_output": true`, you can write your reference solution in the **answer** field (the code editor in the LF UI) instead of hardcoding `expected_output` in every test case. The system runs your solution with each test's input and uses its output as the expected result.
+
+**Params**
+```json
+{
+  "mode": "io_test",
+  "use_answer_as_expected_output": true,
+  "tests": [
+    { "input": "5\n" },
+    { "input": "0\n" },
+    { "input": "-3\n", "hidden": true }
+  ]
+}
+```
+
+**Answer field** (reference solution):
+```python
+n = int(input())
+print(n * n)
+```
+
+This is especially convenient when the reference solution is already in the answer field for the worked solution display — you don't need to duplicate the expected outputs.
 
 ### Example — square a number (stdin-based)
 
@@ -158,6 +184,27 @@ def test_square_is_nonnegative(n):
 - If the student's code raises an exception at module level (e.g. a syntax or runtime error outside any function), all tests are reported as an error.
 - Student `print()` calls do not affect test results.
 - A 25-second total timeout applies to the entire execution.
+
+### Writing test code in the answer field
+
+The LF params editor is a plain JSON editor, which makes writing multiline test code awkward. Instead, set `"use_answer_as_test_code": true` and write your test functions in the **answer** field (the proper code editor):
+
+**Params**
+```json
+{
+  "mode": "unit_test",
+  "use_answer_as_test_code": true
+}
+```
+
+**Answer field** (test code):
+```python
+def test_positive():
+    assert square(5) == 25, "square(5) should be 25"
+
+def test_zero():
+    assert square(0) == 0
+```
 
 ### Example — testing a `square` function
 

@@ -131,6 +131,32 @@ class TestReplExpression(unittest.TestCase):
         self.assertFalse(result["is_correct"])
 
 
+class TestIoAnswerMode(unittest.TestCase):
+
+    def test_answer_used_as_expected(self):
+        params = {"mode": "io_test", "use_answer_as_expected_output": True,
+                  "tests": [{"input": ""}]}
+        result = evaluation_function("3.14159*2*5", "3.14159*2*5", params).to_dict()
+        self.assertTrue(result["is_correct"])
+
+    def test_answer_used_student_wrong(self):
+        params = {"mode": "io_test", "use_answer_as_expected_output": True,
+                  "tests": [{"input": ""}]}
+        result = evaluation_function("3.14159*2*6", "3.14159*2*5", params).to_dict()
+        self.assertFalse(result["is_correct"])
+
+    def test_answer_with_inject(self):
+        params = {"mode": "io_test", "use_answer_as_expected_output": True,
+                  "tests": [{"inject": {"n": 5}}]}
+        result = evaluation_function("print(n * n)", "print(n * n)", params).to_dict()
+        self.assertTrue(result["is_correct"])
+
+    def test_flag_absent_uses_expected_output_field(self):
+        params = _params(_test("", "31.4159\n"))
+        result = evaluation_function("3.14159*2*5", "ignored", params).to_dict()
+        self.assertTrue(result["is_correct"])
+
+
 _PLOT_CODE = "import matplotlib.pyplot as plt\nplt.plot([1, 2, 3])\n"
 _MULTI_PLOT_CODE = (
     "import matplotlib.pyplot as plt\n"
@@ -261,6 +287,12 @@ class TestUnitTestMode(unittest.TestCase):
 
         self.assertTrue(result["is_correct"])
         self.assertIn("1/1 tests passed", result["feedback"])
+
+    def test_use_answer_as_test_code(self):
+        params = {"mode": "unit_test", "use_answer_as_test_code": True}
+        result = evaluation_function(_SQUARE_FN, _SQUARE_TESTS, params).to_dict()
+        self.assertTrue(result["is_correct"])
+        self.assertIn("2/2 tests passed", result["feedback"])
 
     def test_hypothesis_fail_shows_minimal_example(self):
         result = evaluation_function(_WRONG_SQUARE_FN, None, _unit_params(_SQUARE_TESTS_HYPOTHESIS)).to_dict()

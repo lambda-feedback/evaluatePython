@@ -16,7 +16,7 @@
 ```json
 {
   "response": "<student code string>",
-  "answer":   "<unused — may be null>",
+  "answer":   "<reference solution — used when use_answer_as_test_code or use_answer_as_expected_output is set>",
   "params": { ... }
 }
 ```
@@ -34,6 +34,8 @@ Run student code with no stdin and return its stdout as output feedback. No pass
   "mode": "demo"
 }
 ```
+
+If the last statement is a bare expression (e.g. `3.14 * 2 * 5`), it is automatically wrapped in `print(repr(...))` so it prints like a REPL. Existing `print()` calls are not double-wrapped.
 
 Feedback tags produced: `output` (stdout + any plots), or `error` (timeout / runtime error).
 
@@ -67,13 +69,31 @@ Each test case uses either `input` (stdin-based) or `inject` (variable injection
 |-------|-------------|
 | `input` | Text piped to stdin. Mutually exclusive with `inject`. |
 | `inject` | Dict of `{variable_name: value}` prepended as assignments before student code. Values can be any JSON type. Mutually exclusive with `input`. |
-| `expected_output` | Expected stdout; trailing whitespace stripped before comparison. |
+| `expected_output` | Expected stdout; trailing whitespace stripped before comparison. Required unless `use_answer_as_expected_output` is set. |
 | `hidden` | `true` = suppress input/variables and expected output from feedback. |
 
 - `tests` is required; an empty list sets `is_correct = true` with `0/0 tests passed`.
 - `hidden: true` replaces details with `"Hidden test N: failed."` so students cannot reverse-engineer the answer.
 - With `inject`, feedback shows a "Variables:" block (e.g. `n = 5`) instead of "Input:".
+- Bare final expressions in student code are auto-wrapped in `print(repr(...))` (REPL behaviour).
 - Matplotlib figures generated during a test are uploaded to S3 and embedded in the feedback.
+
+#### `use_answer_as_expected_output`
+
+When `true`, the `answer` argument (reference solution code) is executed with the same input/inject as each test, and its stdout is used as the expected output. The `expected_output` field on each test object is ignored.
+
+```json
+{
+  "mode": "io_test",
+  "use_answer_as_expected_output": true,
+  "tests": [
+    { "input": "5\n" },
+    { "inject": {"n": 5} }
+  ]
+}
+```
+
+This avoids hardcoding expected outputs in params — useful when the LF UI code editor holds the reference solution.
 
 Feedback tags produced per test: `pass`, `fail`, or `hidden_fail`. Global: `summary`, `error` (timeout / runtime error).
 
@@ -97,6 +117,17 @@ Append teacher-supplied test code to the student submission, then execute the co
 - `test_code` must be non-empty; an empty string returns an `error` feedback item.
 - Student `print()` calls do not pollute test results (stdout is discarded; results are passed via a temp JSON file).
 - `is_correct` is `true` only when all tests pass and at least one test ran.
+
+#### `use_answer_as_test_code`
+
+When `true`, the `answer` argument is used as the test code instead of `params["test_code"]`. This is preferred when using the LF UI, whose params field is a plain JSON editor (poor for multiline code) while the answer field is a proper code editor.
+
+```json
+{
+  "mode": "unit_test",
+  "use_answer_as_test_code": true
+}
+```
 
 Feedback tags produced per test: `pass`, `fail`. Global: `summary`, `error` (timeout / module-level crash / empty test_code).
 

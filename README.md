@@ -31,6 +31,8 @@ The function supports three modes, set via `params.mode`.
 }
 ```
 
+Bare expressions (e.g. `5 * 5`) print automatically without `print()`, like a Jupyter notebook cell.
+
 **`io_test`** — compare stdout against expected output for each test case:
 
 ```json
@@ -46,6 +48,8 @@ The function supports three modes, set via `params.mode`.
 }
 ```
 
+Set `"use_answer_as_expected_output": true` to run the `answer` (reference solution) against each test's input instead of hardcoding `expected_output`. Variable injection via `inject` is also supported as an alternative to stdin.
+
 **`unit_test`** — run student code then execute `test_*` functions or `unittest.TestCase` subclasses (including Hypothesis tests):
 
 ```json
@@ -57,6 +61,8 @@ The function supports three modes, set via `params.mode`.
   }
 }
 ```
+
+Set `"use_answer_as_test_code": true` to read test code from the `answer` field instead of `params.test_code` — useful in the LF UI where the answer field is a proper code editor.
 
 ## Development
 
@@ -99,6 +105,14 @@ python -m evaluation_function.dev "print(int(input())**2)" "" \
 # unit_test mode
 python -m evaluation_function.dev "def square(n): return n*n" "" \
   '{"mode":"unit_test","test_code":"def test_sq():\n    assert square(3)==9\n"}'
+
+# unit_test — test code from answer field
+python -m evaluation_function.dev "def square(n): return n*n" "def test_sq():\n    assert square(3)==9\n" \
+  '{"mode":"unit_test","use_answer_as_test_code":true}'
+
+# io_test — expected output from answer field
+python -m evaluation_function.dev "3.14159*2*5" "3.14159*2*5" \
+  '{"mode":"io_test","use_answer_as_expected_output":true,"tests":[{"input":""}]}'
 ```
 
 ### Running Tests

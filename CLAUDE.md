@@ -50,10 +50,31 @@ All source lives in `evaluation_function/`:
     ]
 }
 
+# io_test — expected outputs derived from answer code (preferred when using LF UI)
+# Write the reference solution in the answer field; only provide inputs in tests.
+# The system runs the answer code with each test's input to compute expected output.
+{
+    "mode": "io_test",
+    "use_answer_as_expected_output": True,   # runs answer code to get expected output
+    "tests": [
+        {"input": "5\n"},
+        {"inject": {"n": 5}}
+    ]
+}
+
 # unit_test — run student code then execute test functions/TestCases
 {
     "mode": "unit_test",
     "test_code": "def test_square():\n    assert square(5) == 25\n"
+}
+
+# unit_test — test code in the answer field (preferred when using LF UI)
+# The LF params editor handles multiline code poorly; the answer field is a
+# proper code editor. Set use_answer_as_test_code=True and write test code
+# in the response area's answer field instead of params["test_code"].
+{
+    "mode": "unit_test",
+    "use_answer_as_test_code": True   # reads test code from the answer argument
 }
 ```
 

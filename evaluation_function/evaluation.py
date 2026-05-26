@@ -151,14 +151,13 @@ def _evaluate_demo(response: str, result: Result) -> Result:
     return result
 
 
-def _evaluate_io(response: str, tests: list, result: Result) -> Result:
+def _evaluate_io(response: str, tests: list, result: Result, answer: str = "") -> Result:
     passed = 0
     response = _add_repl_print(response)
 
     for i, test in enumerate(tests, 1):
         inject = test.get("inject")
         stdin = test.get("input", "")
-        expected = test.get("expected_output", "").rstrip()
         hidden = test.get("hidden", False)
 
         if inject:
@@ -167,9 +166,18 @@ def _evaluate_io(response: str, tests: list, result: Result) -> Result:
             run_stdin = ""
             input_block = _code_block("Variables", "\n".join(f"{k} = {v!r}" for k, v in inject.items()))
         else:
+            prefix = ""
             run_code = response
             run_stdin = stdin
             input_block = _code_block("Input", stdin.rstrip()) if stdin.strip() else None
+
+        if answer:
+            ans_code = _add_repl_print(answer)
+            ans_run_code = (prefix + ans_code) if inject else ans_code
+            ans_stdout, _, _, _ = _run_code(ans_run_code, run_stdin)
+            expected = ans_stdout.rstrip()
+        else:
+            expected = test.get("expected_output", "").rstrip()
 
         stdout, stderr, timed_out, images = _run_code(run_code, run_stdin)
         actual = stdout.rstrip()
@@ -274,5 +282,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     if mode == "demo":
         return _evaluate_demo(str(response), result)
     if mode == "io_test":
-        return _evaluate_io(str(response), params.get("tests", []), result)
-    return _evaluate_unit(str(response), params.get("test_code", ""), result)
+        ans = str(answer) if params.get("use_answer_as_expected_output") else ""
+        return _evaluate_io(str(response), params.get("tests", []), result, answer=ans)
+    test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
+    return _evaluate_unit(str(response), test_code, result)
