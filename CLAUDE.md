@@ -76,6 +76,20 @@ All source lives in `evaluation_function/`:
     "mode": "unit_test",
     "use_answer_as_test_code": True   # reads test code from the answer argument
 }
+
+# pep8_feedback — optional, works with all modes
+# Adds a "style" feedback item with PEP8 violations from the student's code.
+# True uses the default curated rule set; a list overrides with specific codes.
+# Default rules: E111 (indentation), E225 (whitespace around operator),
+#   E231 (whitespace after comma/colon), E303 (too many blank lines),
+#   W191 (tabs), E711 (== None), E712 (== True/False).
+{
+    "mode": "io_test",
+    "pep8_feedback": True,              # use default curated rules
+    # or:
+    "pep8_feedback": ["E225", "E231"],  # custom rule list
+    "tests": [...]
+}
 ```
 
 ### Security model (`preview.py`)

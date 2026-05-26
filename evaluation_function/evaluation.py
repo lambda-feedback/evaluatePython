@@ -6,12 +6,27 @@ import subprocess
 import tempfile
 from typing import Any
 
+import pycodestyle
 from PIL import Image
 from lf_toolkit.evaluation import Result, Params
 from lf_toolkit.evaluation.image_upload import upload_image, ImageUploadError
 
 _TIMEOUT = 25
 _UPLOAD_FOLDER = "evaluatePython"
+
+_PEP8_SELECT = ["E111", "E225", "E231", "E303", "W191", "E711", "E712"]
+
+
+class _Pep8Report(pycodestyle.BaseReport):
+    def __init__(self, options):
+        super().__init__(options)
+        self.violations: list[tuple[int, str]] = []
+
+    def error(self, line_number, offset, text, check):
+        code = super().error(line_number, offset, text, check)
+        if code:
+            self.violations.append((line_number, text))
+        return code
 
 _PREAMBLE_TEMPLATE = """\
 import os as _os
@@ -135,6 +150,21 @@ def _upload_plots(images: list[Image.Image]) -> list[str]:
         except ImageUploadError:
             pass
     return result
+
+
+def _check_pep8(code: str, select: list[str]) -> list[str]:
+    lines = code.splitlines(True)
+    if not lines:
+        return []
+    if not lines[-1].endswith('\n'):
+        lines[-1] += '\n'
+    style = pycodestyle.StyleGuide(
+        select=select, max_line_length=200, reporter=_Pep8Report,
+        show_source=False, show_pep8=False,
+    )
+    checker = pycodestyle.Checker(filename='student_code', lines=lines, options=style.options)
+    checker.check_all()
+    return [f"Line {ln}: {text}" for ln, text in checker.report.violations]
 
 
 def _evaluate_demo(response: str, result: Result) -> Result:
@@ -280,9 +310,22 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         return result
 
     if mode == "demo":
-        return _evaluate_demo(str(response), result)
-    if mode == "io_test":
+        result = _evaluate_demo(str(response), result)
+    elif mode == "io_test":
         ans = str(answer) if params.get("use_answer_as_expected_output") else ""
-        return _evaluate_io(str(response), params.get("tests", []), result, answer=ans)
-    test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
-    return _evaluate_unit(str(response), test_code, result)
+        result = _evaluate_io(str(response), params.get("tests", []), result, answer=ans)
+    else:
+        test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
+        result = _evaluate_unit(str(response), test_code, result)
+
+    pep8_param = params.get("pep8_feedback")
+    if pep8_param:
+        select = pep8_param if isinstance(pep8_param, list) else _PEP8_SELECT
+        violations = _check_pep8(str(response), select)
+        if violations:
+            body = "Style suggestions (PEP8):\n" + "\n".join(f"- {v}" for v in violations)
+        else:
+            body = "No style issues found."
+        result.add_feedback("style", body)
+
+    return result

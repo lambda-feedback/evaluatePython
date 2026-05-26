@@ -300,3 +300,34 @@ class TestUnitTestMode(unittest.TestCase):
         self.assertFalse(result["is_correct"])
         self.assertIn("0/1 tests passed", result["feedback"])
         self.assertIn("square(", result["feedback"])
+
+
+class TestPep8Feedback(unittest.TestCase):
+
+    def test_violations_reported(self):
+        # E225: missing whitespace around operator
+        result = evaluation_function("x=1\nprint(x)", None, {"mode": "demo", "pep8_feedback": True}).to_dict()
+        self.assertIn("Style suggestions", result["feedback"])
+        self.assertIn("E225", result["feedback"])
+
+    def test_clean_code_no_issues(self):
+        result = evaluation_function("x = 1\nprint(x)", None, {"mode": "demo", "pep8_feedback": True}).to_dict()
+        self.assertIn("No style issues found", result["feedback"])
+
+    def test_not_set_no_style_feedback(self):
+        result = evaluation_function("x=1\nprint(x)", None, {"mode": "demo"}).to_dict()
+        self.assertNotIn("Style suggestions", result["feedback"])
+        self.assertNotIn("No style issues found", result["feedback"])
+
+    def test_custom_rule_list(self):
+        # E225 and E231 both violated: x=1 and print(x,y)
+        code = "x=1\nprint(x,x)"
+        result = evaluation_function(code, None, {"mode": "demo", "pep8_feedback": ["E225"]}).to_dict()
+        self.assertIn("E225", result["feedback"])
+        self.assertNotIn("E231", result["feedback"])
+
+    def test_pep8_appended_to_io_test_result(self):
+        params = {**_params(_test("5\n", "25\n")), "pep8_feedback": True}
+        result = evaluation_function(_SQUARE_CODE, None, params).to_dict()
+        self.assertTrue(result["is_correct"])
+        self.assertIn("No style issues found", result["feedback"])

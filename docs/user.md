@@ -224,6 +224,54 @@ Params:
 
 ---
 
+## Optional: PEP8 style feedback
+
+Add `"pep8_feedback": true` to any mode's params to give students feedback on code style. This runs a PEP8 check on their submission and appends a **Style suggestions** item to the feedback — regardless of whether their tests pass or fail.
+
+```json
+{
+  "mode": "io_test",
+  "pep8_feedback": true,
+  "tests": [...]
+}
+```
+
+When the student's code is clean the item reads *"No style issues found."* Otherwise it lists each violation by line number:
+
+```
+Style suggestions (PEP8):
+- Line 1: E225 missing whitespace around operator
+- Line 3: E231 missing whitespace after ','
+```
+
+**Default rules checked** (chosen to be meaningful for intro students):
+
+| Code | What it catches | Example |
+|------|-----------------|---------|
+| `E111` | Indentation not a multiple of 4 spaces | 2-space indent |
+| `E225` | Missing whitespace around operators | `x=1` → `x = 1` |
+| `E231` | Missing whitespace after `,` or `:` | `f(a,b)` → `f(a, b)` |
+| `E303` | Too many blank lines (3+) | — |
+| `W191` | Tabs used for indentation | — |
+| `E711` | Comparison to `None` with `==` | `x == None` → `x is None` |
+| `E712` | Comparison to `True`/`False` with `==` | `x == True` → `if x:` |
+
+### Selecting specific rules
+
+Pass a list of rule codes instead of `true` to check only those rules:
+
+```json
+{
+  "mode": "unit_test",
+  "pep8_feedback": ["E225", "E231"],
+  "use_answer_as_test_code": true
+}
+```
+
+This overrides the defaults entirely — only the listed codes are reported.
+
+---
+
 ## Security restrictions
 
 Students' code is checked before execution. The following are blocked and will return an error before the code runs:

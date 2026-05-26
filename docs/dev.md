@@ -133,6 +133,21 @@ Feedback tags produced per test: `pass`, `fail`. Global: `summary`, `error` (tim
 
 ---
 
+### Global param: `pep8_feedback`
+
+Applies to all three modes. When set, a PEP8 style check is run on the raw student code after the mode-specific evaluation and a `style` feedback item is appended.
+
+```json
+{ "pep8_feedback": true }
+```
+
+- `true` — use the default curated rule set: `E111`, `E225`, `E231`, `E303`, `W191`, `E711`, `E712`
+- `["E225", "E231"]` — override with a custom list of pycodestyle rule codes
+
+The check runs in-process via `pycodestyle.Checker` with `max_line_length=200` (line length is not flagged). Source lines and pep8 explanations are suppressed; only `Line N: Exxx message` strings are reported.
+
+---
+
 ### Response
 
 ```json
@@ -152,6 +167,7 @@ Feedback tags produced per test: `pass`, `fail`. Global: `summary`, `error` (tim
 | `error` | Security violation, runtime error, or timeout |
 | `output` | Demo-mode stdout + plots |
 | `summary` | `N/M tests passed` line |
+| `style` | PEP8 style check result (only when `pep8_feedback` is set) |
 
 ---
 
@@ -261,5 +277,25 @@ On security violation:
 {
   "is_correct": true,
   "feedback": "test_positive: passed.\n\ntest_zero: passed.\n\n2/2 tests passed."
+}
+```
+
+---
+
+### pep8_feedback (any mode)
+
+**Request**
+```json
+{
+  "response": "x=1\nprint(x,x+1)",
+  "params": { "mode": "demo", "pep8_feedback": true }
+}
+```
+
+**Response**
+```json
+{
+  "is_correct": false,
+  "feedback": "Output:\n```\n1 2\n```\n\nStyle suggestions (PEP8):\n- Line 1: E225 missing whitespace around operator\n- Line 2: E231 missing whitespace after ','"
 }
 ```

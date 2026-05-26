@@ -1338,7 +1338,7 @@ parsing = ["antlr4-python3-runtime (==4.13.2)", "lark (==1.2.2)", "latex2sympy @
 type = "git"
 url = "https://github.com/lambda-feedback/toolkit-python.git"
 reference = "main"
-resolved_reference = "367aeaa83d95c42d37cfcebac7316b3b04e981e7"
+resolved_reference = "312746e1a92f421b1aa176dfbc165756c14552b7"
 
 [[package]]
 name = "matplotlib"
@@ -1995,7 +1995,7 @@ version = "2.12.1"
 description = "Python style guide checker"
 optional = false
 python-versions = ">=3.8"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "pycodestyle-2.12.1-py2.py3-none-any.whl", hash = "sha256:46f0fb92069a7c28ab7bb558f05bfc0110dac69a0cd23c61ea0040283a9d78b3"},
     {file = "pycodestyle-2.12.1.tar.gz", hash = "sha256:6838eae08bbce4f6accd5d5572075c63626a15ee3e6f842df996bf62f6d73521"},
@@ -3209,4 +3209,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "c7b987ec07385a48cf1247076ed9870ce4d76fbc7547bf06f45d4a753136b8bf"
+content-hash = "d8bbce14c2eec5648f604d208cf6b8573d5005f1962f2aefc0313b80b73a87c4"

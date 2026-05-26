@@ -64,6 +64,10 @@ Set `"use_answer_as_expected_output": true` to run the `answer` (reference solut
 
 Set `"use_answer_as_test_code": true` to read test code from the `answer` field instead of `params.test_code` — useful in the LF UI where the answer field is a proper code editor.
 
+### Optional: PEP8 style feedback
+
+Add `"pep8_feedback": true` to any mode to append a style check to the feedback. Use a list of rule codes (e.g. `["E225", "E231"]`) to override the defaults. See [`docs/user.md`](docs/user.md) for the full rule set.
+
 ## Development
 
 ### Prerequisites
