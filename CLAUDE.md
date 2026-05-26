@@ -36,9 +36,16 @@ All source lives in `evaluation_function/`:
     "mode": "io_test",
     "tests": [
         {
+            # stdin-based: student code calls input()
             "input": "5\n",            # stdin fed to student code
             "expected_output": "25\n", # expected stdout
             "hidden": False            # True = suppress input/output in feedback
+        },
+        {
+            # inject-based: variables are set before student code runs (no input() needed)
+            "inject": {"n": 5},        # dict of {variable_name: value} to inject
+            "expected_output": "25\n",
+            "hidden": False
         }
     ]
 }

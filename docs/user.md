@@ -44,11 +44,14 @@ Runs the student's code once per test case, feeding it a string via stdin and co
 
 ### Test case fields
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `input` | No | Text sent to the program's stdin. Use `\n` for newlines. Omit or use `""` if the program reads no input. |
-| `expected_output` | Yes | The exact stdout the program should produce. Trailing whitespace is ignored during comparison. |
-| `hidden` | No | Set to `true` to hide the input and expected output from the student. They see only "Hidden test N: passed/failed." |
+Each test case uses **either** `input` (student reads via `input()`) **or** `inject` (variables are pre-set, no `input()` needed):
+
+| Field | Description |
+|-------|-------------|
+| `input` | Text sent to stdin. Student code reads it with `input()`. Use `\n` for newlines. |
+| `inject` | Dict of variable names and values injected before student code runs. Student uses the variables directly — no `input()` required. Values can be numbers, strings, lists, or dicts. |
+| `expected_output` | The exact stdout the program should produce. Trailing whitespace is ignored. |
+| `hidden` | `true` = hide the input/variables and expected output from the student. They see only "Hidden test N: passed/failed." |
 
 ### Tips
 
@@ -57,7 +60,7 @@ Runs the student's code once per test case, feeding it a string via stdin and co
 - Matplotlib figures produced during a passing or failing test are shown to the student.
 - A 25-second per-test timeout applies; timed-out tests count as failures.
 
-### Example — square a number
+### Example — square a number (stdin-based)
 
 Student code:
 ```python
@@ -73,6 +76,27 @@ Params:
     { "input": "5\n",  "expected_output": "25\n" },
     { "input": "0\n",  "expected_output": "0\n"  },
     { "input": "-3\n", "expected_output": "9\n", "hidden": true }
+  ]
+}
+```
+
+### Example — square a number (inject-based)
+
+Use `inject` when students shouldn't need to handle input themselves — they just write an expression or use the named variable directly:
+
+Student code:
+```python
+print(n * n)
+```
+
+Params:
+```json
+{
+  "mode": "io_test",
+  "tests": [
+    { "inject": {"n": 5},  "expected_output": "25\n" },
+    { "inject": {"n": 0},  "expected_output": "0\n"  },
+    { "inject": {"n": -3}, "expected_output": "9\n", "hidden": true }
   ]
 }
 ```

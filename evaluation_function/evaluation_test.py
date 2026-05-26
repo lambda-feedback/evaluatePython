@@ -18,6 +18,10 @@ def _test(inp, expected, hidden=False):
     return {"input": inp, "expected_output": expected, "hidden": hidden}
 
 
+def _inject_test(inject, expected, hidden=False):
+    return {"inject": inject, "expected_output": expected, "hidden": hidden}
+
+
 class TestEvaluationFunction(unittest.TestCase):
 
     def test_all_pass(self):
@@ -64,6 +68,45 @@ class TestEvaluationFunction(unittest.TestCase):
 
         self.assertFalse(result["is_correct"])
         self.assertIn("mode", result["feedback"])
+
+
+class TestInjectMode(unittest.TestCase):
+
+    def test_inject_pass(self):
+        params = _params(_inject_test({"n": 5}, "25\n"))
+        result = evaluation_function("print(n * n)", None, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("1/1 tests passed", result["feedback"])
+        self.assertIn("Variables", result["feedback"])
+        self.assertIn("n = 5", result["feedback"])
+
+    def test_inject_fail_shows_variables(self):
+        params = _params(_inject_test({"n": 5}, "999\n"))
+        result = evaluation_function("print(n * n)", None, params).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("Variables", result["feedback"])
+        self.assertIn("n = 5", result["feedback"])
+
+    def test_inject_multiple_vars(self):
+        params = _params(_inject_test({"a": 3, "b": 4}, "7\n"))
+        result = evaluation_function("print(a + b)", None, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+
+    def test_inject_hidden_suppresses_variables(self):
+        params = _params(_inject_test({"n": 5}, "999\n", hidden=True))
+        result = evaluation_function("print(n * n)", None, params).to_dict()
+
+        self.assertFalse(result["is_correct"])
+        self.assertNotIn("n = 5", result["feedback"])
+
+    def test_inject_string_value(self):
+        params = _params(_inject_test({"name": "Alice"}, "Hello, Alice\n"))
+        result = evaluation_function('print(f"Hello, {name}")', None, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
 
 
 _PLOT_CODE = "import matplotlib.pyplot as plt\nplt.plot([1, 2, 3])\n"

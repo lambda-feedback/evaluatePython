@@ -43,21 +43,36 @@ Feedback tags produced: `output` (stdout + any plots), or `error` (timeout / run
 
 Run student code against a list of stdin/stdout test cases.
 
+Each test case uses either `input` (stdin-based) or `inject` (variable injection):
+
 ```json
 {
   "mode": "io_test",
   "tests": [
     {
-      "input":           "5\n",   // stdin fed to the process
-      "expected_output": "25\n",  // expected stdout (trailing whitespace stripped before comparison)
-      "hidden":          false    // true = suppress input/output values from feedback
+      "input":           "5\n",   // stdin — student code calls input()
+      "expected_output": "25\n",
+      "hidden":          false
+    },
+    {
+      "inject":          {"n": 5}, // variables set before student code runs — no input() needed
+      "expected_output": "25\n",
+      "hidden":          false
     }
   ]
 }
 ```
 
+| Field | Description |
+|-------|-------------|
+| `input` | Text piped to stdin. Mutually exclusive with `inject`. |
+| `inject` | Dict of `{variable_name: value}` prepended as assignments before student code. Values can be any JSON type. Mutually exclusive with `input`. |
+| `expected_output` | Expected stdout; trailing whitespace stripped before comparison. |
+| `hidden` | `true` = suppress input/variables and expected output from feedback. |
+
 - `tests` is required; an empty list sets `is_correct = true` with `0/0 tests passed`.
-- `hidden: true` replaces input/output details with `"Hidden test N: failed."` so students cannot reverse-engineer the answer.
+- `hidden: true` replaces details with `"Hidden test N: failed."` so students cannot reverse-engineer the answer.
+- With `inject`, feedback shows a "Variables:" block (e.g. `n = 5`) instead of "Input:".
 - Matplotlib figures generated during a test are uploaded to S3 and embedded in the feedback.
 
 Feedback tags produced per test: `pass`, `fail`, or `hidden_fail`. Global: `summary`, `error` (timeout / runtime error).

@@ -138,11 +138,22 @@ def _evaluate_io(response: str, tests: list, result: Result) -> Result:
     passed = 0
 
     for i, test in enumerate(tests, 1):
+        inject = test.get("inject")
         stdin = test.get("input", "")
         expected = test.get("expected_output", "").rstrip()
         hidden = test.get("hidden", False)
 
-        stdout, stderr, timed_out, images = _run_code(response, stdin)
+        if inject:
+            prefix = "".join(f"{k} = {v!r}\n" for k, v in inject.items())
+            run_code = prefix + response
+            run_stdin = ""
+            input_block = _code_block("Variables", "\n".join(f"{k} = {v!r}" for k, v in inject.items()))
+        else:
+            run_code = response
+            run_stdin = stdin
+            input_block = _code_block("Input", stdin.rstrip()) if stdin.strip() else None
+
+        stdout, stderr, timed_out, images = _run_code(run_code, run_stdin)
         actual = stdout.rstrip()
         label = f"Hidden test {i}" if hidden else f"Test {i}"
 
@@ -155,8 +166,8 @@ def _evaluate_io(response: str, tests: list, result: Result) -> Result:
                 result.add_feedback(tag, f"{label}: runtime error.")
             else:
                 parts = [f"{label}: runtime error."]
-                if stdin.strip():
-                    parts.append(_code_block("Input", stdin.rstrip()))
+                if input_block:
+                    parts.append(input_block)
                 parts.append(_code_block("Error", stderr.strip()))
                 result.add_feedback(tag, "\n\n".join(parts))
         elif actual == expected:
@@ -165,8 +176,8 @@ def _evaluate_io(response: str, tests: list, result: Result) -> Result:
                 result.add_feedback("pass", f"{label}: passed.")
             else:
                 parts = [f"{label}: passed."]
-                if stdin.strip():
-                    parts.append(_code_block("Input", stdin.rstrip()))
+                if input_block:
+                    parts.append(input_block)
                 parts.append(_code_block("Output", actual or "(no output)"))
                 parts.extend(_upload_plots(images))
                 result.add_feedback("pass", "\n\n".join(parts))
@@ -176,8 +187,8 @@ def _evaluate_io(response: str, tests: list, result: Result) -> Result:
                 result.add_feedback(tag, f"{label}: failed.")
             else:
                 parts = [f"{label}: failed."]
-                if stdin.strip():
-                    parts.append(_code_block("Input", stdin.rstrip()))
+                if input_block:
+                    parts.append(input_block)
                 parts.append(_code_block("Your output", actual or "(no output)"))
                 parts.append(_code_block("Expected", expected))
                 parts.extend(_upload_plots(images))
