@@ -158,7 +158,7 @@ Params:
 Students' code is checked before execution. The following are blocked and will return an error before the code runs:
 
 - Importing: `os`, `sys`, `subprocess`, `socket`, `requests`, `pathlib`, and other system/network modules
-- Calling: `exec`, `eval`, `compile`, `open`, `__import__`
+- Calling: `exec`, `eval`, `compile`, `open`, `__import__` (but **`input()` is allowed**)
 - Accessing dunder attributes (`__class__`, `__dict__`, etc.)
 
 These restrictions cannot be bypassed; attempts result in an error feedback item rather than execution.

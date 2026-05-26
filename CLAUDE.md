@@ -55,7 +55,7 @@ All source lives in `evaluation_function/`:
 `_SecurityVisitor` walks the AST before any execution and blocks:
 
 - **Modules**: `os`, `sys`, `subprocess`, `socket`, `urllib`, `http`, `requests`, `shutil`, `pathlib`, `ftplib`, `smtplib`, `ctypes`, `multiprocessing`, `threading`, `importlib`, `pickle`, `builtins`
-- **Builtins**: `exec`, `eval`, `compile`, `open`, `__import__`, `input`
+- **Builtins**: `exec`, `eval`, `compile`, `open`, `__import__`
 - **Dunder attribute access**: any `__attr__` style attribute
 
 ## Key commands

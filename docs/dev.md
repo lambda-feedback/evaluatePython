@@ -118,7 +118,7 @@ Called before evaluation. Parses the student code as an AST and checks for secur
 | Category | Blocked items |
 |----------|--------------|
 | Module imports | `os`, `sys`, `subprocess`, `socket`, `urllib`, `http`, `requests`, `shutil`, `pathlib`, `ftplib`, `smtplib`, `ctypes`, `multiprocessing`, `threading`, `importlib`, `pickle`, `builtins` |
-| Builtins | `exec`, `eval`, `compile`, `open`, `__import__`, `input` |
+| Builtins | `exec`, `eval`, `compile`, `open`, `__import__` |
 | Attribute access | Any dunder (`__attr__`) attribute |
 
 ### Response

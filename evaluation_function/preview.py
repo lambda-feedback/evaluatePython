@@ -9,7 +9,7 @@ _BLOCKED_MODULES = {
     "pickle", "builtins",
 }
 
-_BLOCKED_BUILTINS = {"exec", "eval", "compile", "open", "__import__", "input"}
+_BLOCKED_BUILTINS = {"exec", "eval", "compile", "open", "__import__"}
 
 
 class _SecurityVisitor(ast.NodeVisitor):

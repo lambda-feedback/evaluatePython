@@ -47,3 +47,10 @@ class TestPreviewFunction(unittest.TestCase):
 
         self.assertIn("preview", result)
         self.assertIn("Unsafe", result["preview"].get("feedback", ""))
+
+    def test_input_is_allowed(self):
+        response, params = "x = int(input())", Params()
+        result = preview_function(response, params)
+
+        self.assertIn("preview", result)
+        self.assertNotIn("Unsafe", result["preview"].get("feedback", ""))
