@@ -1,7 +1,6 @@
 # evaluatePython
 
-A [Lambda Feedback](https://lambda-feedback.github.io/user-documentation/) evaluation function that executes student Python code submissions in a secure sandbox, runs them against test cases, and returns structured formative feedback. Deployed as a Docker container on the Lambda Feedback platform.
-
+A [Lambda Feedback](https://lambda-feedback.github.io/user-documentation/) evaluation function that executes student Python code submissions in a secure sandbox, runs them against test cases, and returns structured formative feedback. Deployed as a hosted independent microservice, which will be compatible with muEd, and available on any compatible platform, including Lambda Feedback.
 ## Deployment
 
 [![Create Release Request](https://img.shields.io/badge/Create%20Release%20Request-blue?style=for-the-badge)](https://github.com/lambda-feedback/evaluatePython/issues/new?template=release-request.yml)
