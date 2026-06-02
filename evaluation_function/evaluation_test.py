@@ -46,8 +46,8 @@ class TestEvaluationFunction(unittest.TestCase):
 
         self.assertFalse(result["is_correct"])
         self.assertIn("Hidden test 1", result["feedback"])
-        self.assertNotIn("999", result["feedback"])
-        self.assertNotIn("5", result["feedback"])
+        self.assertIn("999", result["feedback"])
+        self.assertNotIn("Input", result["feedback"])
 
     def test_runtime_error(self):
         params = _params(_test("5\n", "25\n"))

@@ -218,37 +218,28 @@ def _evaluate_io(response: str, tests: list, result: Result, answer: str = "") -
             result.add_feedback(tag, f"{label}: timed out after {_TIMEOUT}s.")
         elif stderr and not stdout:
             tag = "hidden_fail" if hidden else "fail"
-            if hidden:
-                result.add_feedback(tag, f"{label}: runtime error.")
-            else:
-                parts = [f"{label}: runtime error."]
-                if input_block:
-                    parts.append(input_block)
-                parts.append(_code_block("Error", stderr.strip()))
-                result.add_feedback(tag, "\n\n".join(parts))
+            parts = [f"{label}: runtime error."]
+            if not hidden and input_block:
+                parts.append(input_block)
+            parts.append(_code_block("Error", stderr.strip()))
+            result.add_feedback(tag, "\n\n".join(parts))
         elif actual == expected:
             passed += 1
-            if hidden:
-                result.add_feedback("pass", f"{label}: passed.")
-            else:
-                parts = [f"{label}: passed."]
-                if input_block:
-                    parts.append(input_block)
-                parts.append(_code_block("Output", actual or "(no output)"))
-                parts.extend(_upload_plots(images))
-                result.add_feedback("pass", "\n\n".join(parts))
+            parts = [f"{label}: passed."]
+            if not hidden and input_block:
+                parts.append(input_block)
+            parts.append(_code_block("Output", actual or "(no output)"))
+            parts.extend(_upload_plots(images))
+            result.add_feedback("pass", "\n\n".join(parts))
         else:
             tag = "hidden_fail" if hidden else "fail"
-            if hidden:
-                result.add_feedback(tag, f"{label}: failed.")
-            else:
-                parts = [f"{label}: failed."]
-                if input_block:
-                    parts.append(input_block)
-                parts.append(_code_block("Your output", actual or "(no output)"))
-                parts.append(_code_block("Expected", expected))
-                parts.extend(_upload_plots(images))
-                result.add_feedback(tag, "\n\n".join(parts))
+            parts = [f"{label}: failed."]
+            if not hidden and input_block:
+                parts.append(input_block)
+            parts.append(_code_block("Your output", actual or "(no output)"))
+            parts.append(_code_block("Expected", expected))
+            parts.extend(_upload_plots(images))
+            result.add_feedback(tag, "\n\n".join(parts))
 
     result.is_correct = passed == len(tests)
     result.add_feedback("summary", f"{passed}/{len(tests)} tests passed.")
@@ -281,6 +272,9 @@ def _evaluate_unit(response: str, test_code: str, result: Result) -> Result:
 
     if test_results is None:
         return result
+
+    if stdout.strip():
+        result.add_feedback("output", _code_block("Output", stdout.rstrip()))
 
     passed = 0
     for r in test_results:
