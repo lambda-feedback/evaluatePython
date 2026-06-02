@@ -253,7 +253,7 @@ def _evaluate_unit(response: str, test_code: str, result: Result) -> Result:
 
     results_path = tempfile.mktemp(suffix=".json")
     runner = _UNIT_RUNNER_TEMPLATE.format(results_path=results_path)
-    combined = response + "\n\n" + test_code + runner
+    combined = _add_repl_print(response) + "\n\n" + test_code + runner
     stdout, stderr, timed_out, _ = _run_code(combined, "")
 
     test_results = None
