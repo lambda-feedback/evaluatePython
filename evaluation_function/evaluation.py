@@ -138,7 +138,7 @@ def _run_code(code: str, stdin: str) -> tuple[str, str, bool, list[Image.Image]]
 
 
 def _code_block(label: str, content: str) -> str:
-    return f"{label}:\n```\n{content}\n```"
+    return f"{label}:\n```\n{content}\n```\n"
 
 
 def _upload_plots(images: list[Image.Image]) -> list[str]:
