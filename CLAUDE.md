@@ -11,17 +11,19 @@ All source lives in `evaluation_function/`:
 | `main.py` | IPC server entry point; registers `evaluation_function` and `preview_function` with lf_toolkit |
 | `evaluation.py` | Core evaluation pipeline: security check → subprocess execution → output comparison → S3 plot upload → structured feedback |
 | `preview.py` | AST-based pre-execution security validator (`_SecurityVisitor`) |
+| `s3_files.py` | Downloads `params["files"]` objects from S3 into the per-request working directory |
 | `dev.py` | CLI wrapper for local manual testing |
 
 ### Evaluation pipeline (`evaluation.py`)
 
 1. Run AST security check on student code
-2. Dispatch by `params["mode"]` (required):
+2. If `params["files"]` is set, download the listed S3 objects once into a per-request working directory (see `s3_files.py`), used as the subprocess `cwd` for every run in this request
+3. Dispatch by `params["mode"]` (required):
    - **`demo`**: execute code with no stdin; return stdout/plots as `output` feedback (no pass/fail)
    - **`io_test`**: for each test in `params["tests"]`, execute with `test["input"]` as stdin and compare stdout against `test["expected_output"]`; upload matplotlib plots on pass or fail
    - **`unit_test`**: append `params["test_code"]` + unit-runner harness to student code; execute once; parse JSON results; supports plain `test_*` functions, `unittest.TestCase` subclasses, and Hypothesis-based tests
-3. Upload any captured matplotlib figures to S3 (`_UPLOAD_FOLDER = "evaluatePython"`)
-4. Return a `Result` with feedback tags: `pass`, `fail`, `hidden_fail`, `error`, `output`, `summary`
+4. Upload any captured matplotlib figures to S3 (`_UPLOAD_FOLDER = "evaluatePython"`)
+5. Return a `Result` with feedback tags: `pass`, `fail`, `hidden_fail`, `error`, `output`, `summary`
 
 ### Request shape
 
@@ -90,15 +92,32 @@ All source lives in `evaluation_function/`:
     "pep8_feedback": ["E225", "E231"],  # custom rule list
     "tests": [...]
 }
+
+# files — optional, works with all modes
+# Downloads objects from S3 into a per-request working directory (the
+# subprocess's cwd) before student code runs. Data files can be read with
+# open()/pandas.read_csv()/etc.; .py files are importable by student code
+# since they're co-located with the generated script. The same files are
+# also available to the answer code when use_answer_as_expected_output /
+# use_answer_as_test_code is set. Requires the S3_FILES_BUCKET env var.
+{
+    "mode": "demo",
+    "files": [
+        {"key": "uploads/<question-id>/data.csv", "filename": "data.csv"},
+        {"key": "uploads/<question-id>/helper.py", "filename": "helper.py"},
+    ]
+}
 ```
 
 ### Security model (`preview.py`)
 
-`_SecurityVisitor` walks the AST before any execution and blocks:
+`_SecurityVisitor` walks the AST and blocks:
 
-- **Modules**: `os`, `sys`, `subprocess`, `socket`, `urllib`, `http`, `requests`, `shutil`, `pathlib`, `ftplib`, `smtplib`, `ctypes`, `multiprocessing`, `threading`, `importlib`, `pickle`, `builtins`
-- **Builtins**: `exec`, `eval`, `compile`, `open`, `__import__`
+- **Modules**: `os`, `sys`, `subprocess`, `socket`, `urllib`, `http`, `requests`, `shutil`, `ftplib`, `smtplib`, `ctypes`, `multiprocessing`, `threading`, `importlib`, `pickle`, `builtins`
+- **Builtins**: `exec`, `eval`, `compile`, `__import__`
 - **Dunder attribute access**: any `__attr__` style attribute
+
+`open`/`pathlib` are intentionally **not** blocked here — they're needed to read files loaded via `params["files"]` (see above). **Important caveat**: `preview_function` (this check) and `evaluation_function` (actual grading) are registered as two independent RPC methods in `main.py`; `evaluation.py` never calls `preview.py`. This check only powers editor-time linting feedback — it does not gate what code can do at grading time. The real, load-bearing control for file access is a runtime-injected restricted `open`/`io.open` in `evaluation.py`'s subprocess preamble (`_safe_open`), which blocks *write* access to anything inside the per-run files directory. It is not a hard sandbox boundary — since `os`/`subprocess` remain fully importable and runnable at grading time regardless of this feature, a student can bypass file restrictions entirely via `os`. Treat this as scoping the intended file-access path, not as isolation.
 
 ## Key commands
 
@@ -148,7 +167,8 @@ CI runs on Python 3.12 and uploads JUnit XML results (`.github/workflows/test-li
 | `FUNCTION_ARGS` | `-m,evaluation_function.main` | lf_toolkit runner |
 | `FUNCTION_RPC_TRANSPORT` | `ipc` | lf_toolkit transport |
 | `LOG_LEVEL` | `debug` | Logging verbosity |
-| `AWS_*` / boto3 credentials | Runtime env | Required for S3 plot uploads |
+| `AWS_*` / boto3 credentials | Runtime env | Required for S3 plot uploads and `files` downloads |
+| `S3_FILES_BUCKET` | Runtime env | Bucket name (not URI) that `params["files"]` object keys are resolved against |
 
 Dependencies managed via Poetry; `.venv` is created in-project (`poetry.toml`).
 

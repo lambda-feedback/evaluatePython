@@ -4,12 +4,12 @@ from lf_toolkit.preview import Result, Params, Preview
 
 _BLOCKED_MODULES = {
     "os", "sys", "subprocess", "socket", "urllib", "http",
-    "requests", "shutil", "pathlib", "ftplib", "smtplib",
+    "requests", "shutil", "ftplib", "smtplib",
     "ctypes", "multiprocessing", "threading", "importlib",
     "pickle", "builtins",
 }
 
-_BLOCKED_BUILTINS = {"exec", "eval", "compile", "open", "__import__"}
+_BLOCKED_BUILTINS = {"exec", "eval", "compile", "__import__"}
 
 
 class _SecurityVisitor(ast.NodeVisitor):
