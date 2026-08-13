@@ -1,42 +1,18 @@
 import os
 from typing import TypedDict
+from urllib.parse import urlparse
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
+import requests
 
 _MAX_FILE_BYTES = 5 * 1024 * 1024
 _MAX_TOTAL_BYTES = 20 * 1024 * 1024
 _DOWNLOAD_TIMEOUT = 10
+_CHUNK_SIZE = 65536
 
 
 class FileSpec(TypedDict):
-    key: str
+    url: str
     filename: str
-
-
-class FileDownloadError(Exception):
-    """Raised for whole-request configuration problems (e.g. missing bucket env var)."""
-    pass
-
-
-def _s3_client():
-    return boto3.client(
-        "s3",
-        region_name=os.environ.get("AWS_REGION", "eu-west-2"),
-        config=Config(
-            connect_timeout=_DOWNLOAD_TIMEOUT,
-            read_timeout=_DOWNLOAD_TIMEOUT,
-            retries={"max_attempts": 2},
-        ),
-    )
-
-
-def _get_bucket_name() -> str:
-    bucket = os.environ.get("S3_FILES_BUCKET")
-    if not bucket:
-        raise FileDownloadError("S3_FILES_BUCKET environment variable is not set")
-    return bucket
 
 
 def _valid_filename(filename: str) -> bool:
@@ -45,50 +21,72 @@ def _valid_filename(filename: str) -> bool:
     return os.path.basename(filename) == filename
 
 
+class _FileTooLarge(Exception):
+    pass
+
+
+def _download_one(url: str, target: str, remaining_budget: int) -> int:
+    """Stream url into target. Returns bytes written.
+
+    Raises _FileTooLarge (and removes any partial file) if the download
+    exceeds _MAX_FILE_BYTES or remaining_budget, or requests.RequestException
+    for network/HTTP errors — both handled by the caller.
+    """
+    resp = requests.get(url, stream=True, timeout=_DOWNLOAD_TIMEOUT)
+    resp.raise_for_status()
+
+    content_length = resp.headers.get("Content-Length")
+    cap = min(_MAX_FILE_BYTES, remaining_budget)
+    if content_length is not None and int(content_length) > cap:
+        raise _FileTooLarge()
+
+    written = 0
+    try:
+        with open(target, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=_CHUNK_SIZE):
+                written += len(chunk)
+                if written > cap:
+                    raise _FileTooLarge()
+                f.write(chunk)
+    except _FileTooLarge:
+        if os.path.exists(target):
+            os.unlink(target)
+        raise
+    return written
+
+
 def download_files(files: list[FileSpec], dest_dir: str) -> list[str]:
     """Download each file into dest_dir.
 
-    Returns a list of warning strings for files that were skipped (missing,
-    too large, or errored) — never raises for per-file problems, only for
-    whole-config problems (missing bucket env var).
+    Returns a list of warning strings for files that were skipped (invalid
+    filename/URL, too large, or errored) — never raises.
     """
     if not files:
         return []
 
-    bucket = _get_bucket_name()
-    client = _s3_client()
-
+    real_dest_dir = os.path.realpath(dest_dir)
     warnings: list[str] = []
     total_bytes = 0
 
     for spec in files:
-        key = spec["key"]
+        url = spec["url"]
         filename = spec["filename"]
 
         if not _valid_filename(filename):
             warnings.append(f"File '{filename}' has an invalid filename and was not made available.")
             continue
 
-        real_dest_dir = os.path.realpath(dest_dir)
         target = os.path.realpath(os.path.join(real_dest_dir, filename))
         if os.path.commonpath([target, real_dest_dir]) != real_dest_dir:
             warnings.append(f"File '{filename}' has an invalid filename and was not made available.")
             continue
 
-        try:
-            head = client.head_object(Bucket=bucket, Key=key)
-        except ClientError as e:
-            warnings.append(f"File '{filename}' could not be found or accessed ({e}).")
+        if urlparse(url).scheme != "https":
+            warnings.append(f"File '{filename}' has an invalid URL and was not made available.")
             continue
 
-        size = head.get("ContentLength", 0)
-        if size > _MAX_FILE_BYTES:
-            warnings.append(
-                f"File '{filename}' exceeds the {_MAX_FILE_BYTES // (1024 * 1024)}MB size limit "
-                "and was not made available."
-            )
-            continue
-        if total_bytes + size > _MAX_TOTAL_BYTES:
+        remaining_budget = _MAX_TOTAL_BYTES - total_bytes
+        if remaining_budget <= 0:
             warnings.append(
                 f"File '{filename}' was skipped because it would exceed the total "
                 f"{_MAX_TOTAL_BYTES // (1024 * 1024)}MB size limit for this run."
@@ -96,11 +94,17 @@ def download_files(files: list[FileSpec], dest_dir: str) -> list[str]:
             continue
 
         try:
-            client.download_file(bucket, key, target)
-        except ClientError as e:
+            written = _download_one(url, target, remaining_budget)
+        except _FileTooLarge:
+            warnings.append(
+                f"File '{filename}' exceeds the {_MAX_FILE_BYTES // (1024 * 1024)}MB size limit "
+                "and was not made available."
+            )
+            continue
+        except requests.exceptions.RequestException as e:
             warnings.append(f"File '{filename}' could not be downloaded ({e}).")
             continue
 
-        total_bytes += size
+        total_bytes += written
 
     return warnings

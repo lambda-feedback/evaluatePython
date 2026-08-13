@@ -3,105 +3,101 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from botocore.exceptions import ClientError
+import requests
 
-from .s3_files import download_files, FileDownloadError, _MAX_FILE_BYTES
+from .s3_files import download_files, _MAX_FILE_BYTES
+
+_URL = "https://example-bucket.s3.amazonaws.com/data.csv?X-Amz-Signature=abc"
 
 
-def _client_error():
-    return ClientError({"Error": {"Code": "404", "Message": "Not Found"}}, "HeadObject")
+def _fake_response(content: bytes, content_length: int | None = None, status_code: int = 200):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.headers = {}
+    if content_length is not None:
+        resp.headers["Content-Length"] = str(content_length)
+
+    def raise_for_status():
+        if status_code >= 400:
+            raise requests.exceptions.HTTPError(f"{status_code} error")
+
+    resp.raise_for_status.side_effect = raise_for_status
+
+    chunk_size = 65536
+
+    def iter_content(chunk_size=chunk_size):
+        for i in range(0, len(content), chunk_size):
+            yield content[i:i + chunk_size]
+
+    resp.iter_content.side_effect = iter_content
+    return resp
 
 
 class TestDownloadFiles(unittest.TestCase):
 
     def setUp(self):
         self.dest_dir = tempfile.mkdtemp()
-        self.env_patcher = patch.dict(os.environ, {"S3_FILES_BUCKET": "test-bucket"})
-        self.env_patcher.start()
 
-    def tearDown(self):
-        self.env_patcher.stop()
+    def test_no_files_returns_empty(self):
+        self.assertEqual(download_files([], self.dest_dir), [])
 
-    def test_no_files_returns_empty_without_client(self):
-        warnings = download_files([], self.dest_dir)
-        self.assertEqual(warnings, [])
+    @patch("evaluation_function.s3_files.requests.get")
+    def test_successful_download_writes_file(self, mock_get):
+        mock_get.return_value = _fake_response(b"hello", content_length=5)
 
-    @patch("evaluation_function.s3_files.boto3.client")
-    def test_successful_download_writes_file(self, mock_client_factory):
-        mock_client = MagicMock()
-        mock_client.head_object.return_value = {"ContentLength": 10}
-
-        def fake_download(bucket, key, target):
-            with open(target, "w") as f:
-                f.write("hello")
-
-        mock_client.download_file.side_effect = fake_download
-        mock_client_factory.return_value = mock_client
-
-        warnings = download_files([{"key": "data.csv", "filename": "data.csv"}], self.dest_dir)
+        warnings = download_files([{"url": _URL, "filename": "data.csv"}], self.dest_dir)
 
         self.assertEqual(warnings, [])
-        with open(os.path.join(self.dest_dir, "data.csv")) as f:
-            self.assertEqual(f.read(), "hello")
+        with open(os.path.join(self.dest_dir, "data.csv"), "rb") as f:
+            self.assertEqual(f.read(), b"hello")
 
-    @patch("evaluation_function.s3_files.boto3.client")
-    def test_oversized_file_skipped(self, mock_client_factory):
-        mock_client = MagicMock()
-        mock_client.head_object.return_value = {"ContentLength": _MAX_FILE_BYTES + 1}
-        mock_client_factory.return_value = mock_client
+    @patch("evaluation_function.s3_files.requests.get")
+    def test_oversized_via_header_skipped(self, mock_get):
+        mock_get.return_value = _fake_response(b"x" * 10, content_length=_MAX_FILE_BYTES + 1)
 
-        warnings = download_files([{"key": "big.csv", "filename": "big.csv"}], self.dest_dir)
+        warnings = download_files([{"url": _URL, "filename": "big.csv"}], self.dest_dir)
 
         self.assertEqual(len(warnings), 1)
         self.assertIn("big.csv", warnings[0])
-        mock_client.download_file.assert_not_called()
         self.assertFalse(os.path.exists(os.path.join(self.dest_dir, "big.csv")))
 
-    @patch("evaluation_function.s3_files.boto3.client")
-    def test_total_size_cap_skips_later_files(self, mock_client_factory):
-        # 5 files at exactly the per-file cap: the first 4 sum to exactly
-        # _MAX_TOTAL_BYTES (allowed), the 5th would push over it (skipped).
-        mock_client = MagicMock()
-        mock_client.head_object.return_value = {"ContentLength": _MAX_FILE_BYTES}
-        mock_client_factory.return_value = mock_client
+    @patch("evaluation_function.s3_files.requests.get")
+    def test_oversized_via_streaming_skipped(self, mock_get):
+        # Content-Length lies (claims small), actual streamed bytes exceed the cap.
+        big_content = b"x" * (_MAX_FILE_BYTES + 1)
+        mock_get.return_value = _fake_response(big_content, content_length=10)
 
-        files = [{"key": f"{i}.csv", "filename": f"{i}.csv"} for i in range(5)]
+        warnings = download_files([{"url": _URL, "filename": "big.csv"}], self.dest_dir)
+
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("big.csv", warnings[0])
+        self.assertFalse(os.path.exists(os.path.join(self.dest_dir, "big.csv")))
+
+    @patch("evaluation_function.s3_files.requests.get")
+    def test_total_size_cap_skips_later_files(self, mock_get):
+        # 5 files at exactly the per-file cap: the first 4 sum to exactly
+        # _MAX_TOTAL_BYTES (allowed), the 5th is skipped without a request.
+        mock_get.return_value = _fake_response(b"x" * _MAX_FILE_BYTES, content_length=_MAX_FILE_BYTES)
+
+        files = [{"url": _URL, "filename": f"{i}.csv"} for i in range(5)]
         warnings = download_files(files, self.dest_dir)
 
-        self.assertEqual(mock_client.download_file.call_count, 4)
+        self.assertEqual(mock_get.call_count, 4)
         self.assertEqual(len(warnings), 1)
         self.assertIn("4.csv", warnings[0])
 
-    def test_missing_bucket_env_var_raises_only_when_files_present(self):
-        self.env_patcher.stop()
-        try:
-            with self.assertRaises(FileDownloadError):
-                download_files([{"key": "data.csv", "filename": "data.csv"}], self.dest_dir)
-            self.assertEqual(download_files([], self.dest_dir), [])
-        finally:
-            self.env_patcher.start()
+    @patch("evaluation_function.s3_files.requests.get")
+    def test_http_error_skipped_others_continue(self, mock_get):
+        def side_effect(url, stream, timeout):
+            if url == "https://example.com/missing":
+                return _fake_response(b"", status_code=404)
+            return _fake_response(b"ok", content_length=2)
 
-    @patch("evaluation_function.s3_files.boto3.client")
-    def test_missing_s3_object_skipped_others_continue(self, mock_client_factory):
-        mock_client = MagicMock()
-
-        def fake_head(Bucket, Key):
-            if Key == "missing.csv":
-                raise _client_error()
-            return {"ContentLength": 5}
-
-        mock_client.head_object.side_effect = fake_head
-
-        def fake_download(bucket, key, target):
-            with open(target, "w") as f:
-                f.write("ok")
-
-        mock_client.download_file.side_effect = fake_download
-        mock_client_factory.return_value = mock_client
+        mock_get.side_effect = side_effect
 
         files = [
-            {"key": "missing.csv", "filename": "missing.csv"},
-            {"key": "ok.csv", "filename": "ok.csv"},
+            {"url": "https://example.com/missing", "filename": "missing.csv"},
+            {"url": "https://example.com/ok", "filename": "ok.csv"},
         ]
         warnings = download_files(files, self.dest_dir)
 
@@ -109,21 +105,23 @@ class TestDownloadFiles(unittest.TestCase):
         self.assertIn("missing.csv", warnings[0])
         self.assertTrue(os.path.exists(os.path.join(self.dest_dir, "ok.csv")))
 
-    @patch("evaluation_function.s3_files.boto3.client")
-    def test_download_error_skipped(self, mock_client_factory):
-        mock_client = MagicMock()
-        mock_client.head_object.return_value = {"ContentLength": 5}
-        mock_client.download_file.side_effect = _client_error()
-        mock_client_factory.return_value = mock_client
+    @patch("evaluation_function.s3_files.requests.get")
+    def test_network_error_skipped(self, mock_get):
+        mock_get.side_effect = requests.exceptions.ConnectionError("boom")
 
-        warnings = download_files([{"key": "data.csv", "filename": "data.csv"}], self.dest_dir)
+        warnings = download_files([{"url": _URL, "filename": "data.csv"}], self.dest_dir)
 
         self.assertEqual(len(warnings), 1)
         self.assertIn("data.csv", warnings[0])
 
+    def test_rejects_non_https_url(self):
+        for bad_url in ("http://example.com/data.csv", "file:///etc/passwd", "ftp://example.com/data.csv"):
+            warnings = download_files([{"url": bad_url, "filename": "data.csv"}], self.dest_dir)
+            self.assertEqual(len(warnings), 1, f"expected a warning for url={bad_url!r}")
+
     def test_filename_validation_rejects_traversal(self):
         for bad_name in ("../evil.py", "/etc/passwd", "", ".", ".."):
-            warnings = download_files([{"key": "k", "filename": bad_name}], self.dest_dir)
+            warnings = download_files([{"url": _URL, "filename": bad_name}], self.dest_dir)
             self.assertEqual(len(warnings), 1, f"expected a warning for filename={bad_name!r}")
 
 

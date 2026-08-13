@@ -11,7 +11,7 @@ from PIL import Image
 from lf_toolkit.evaluation import Result, Params
 from lf_toolkit.evaluation.image_upload import upload_image, ImageUploadError
 
-from .s3_files import download_files, FileDownloadError
+from .s3_files import download_files
 
 _TIMEOUT = 25
 _UPLOAD_FOLDER = "evaluatePython"
@@ -332,10 +332,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     file_specs = params.get("files")
     if file_specs:
         files_dir = tempfile.mkdtemp()
-        try:
-            file_warnings = download_files(file_specs, files_dir)
-        except FileDownloadError as e:
-            file_warnings = [str(e)]
+        file_warnings = download_files(file_specs, files_dir)
 
     try:
         if mode == "demo":

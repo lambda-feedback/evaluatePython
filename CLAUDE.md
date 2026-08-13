@@ -94,17 +94,18 @@ All source lives in `evaluation_function/`:
 }
 
 # files — optional, works with all modes
-# Downloads objects from S3 into a per-request working directory (the
-# subprocess's cwd) before student code runs. Data files can be read with
-# open()/pandas.read_csv()/etc.; .py files are importable by student code
-# since they're co-located with the generated script. The same files are
-# also available to the answer code when use_answer_as_expected_output /
-# use_answer_as_test_code is set. Requires the S3_FILES_BUCKET env var.
+# Downloads files into a per-request working directory (the subprocess's
+# cwd) before student code runs, given a pre-signed or public HTTPS URL per
+# file (fetched directly with a GET — no AWS credentials needed here). Data
+# files can be read with open()/pandas.read_csv()/etc.; .py files are
+# importable by student code since they're co-located with the generated
+# script. The same files are also available to the answer code when
+# use_answer_as_expected_output/use_answer_as_test_code is set.
 {
     "mode": "demo",
     "files": [
-        {"key": "uploads/<question-id>/data.csv", "filename": "data.csv"},
-        {"key": "uploads/<question-id>/helper.py", "filename": "helper.py"},
+        {"url": "https://.../data.csv?X-Amz-Signature=...", "filename": "data.csv"},
+        {"url": "https://.../helper.py?X-Amz-Signature=...", "filename": "helper.py"},
     ]
 }
 ```
@@ -167,8 +168,7 @@ CI runs on Python 3.12 and uploads JUnit XML results (`.github/workflows/test-li
 | `FUNCTION_ARGS` | `-m,evaluation_function.main` | lf_toolkit runner |
 | `FUNCTION_RPC_TRANSPORT` | `ipc` | lf_toolkit transport |
 | `LOG_LEVEL` | `debug` | Logging verbosity |
-| `AWS_*` / boto3 credentials | Runtime env | Required for S3 plot uploads and `files` downloads |
-| `S3_FILES_BUCKET` | Runtime env | Bucket name (not URI) that `params["files"]` object keys are resolved against |
+| `AWS_*` / boto3 credentials | Runtime env | Required for S3 plot uploads. Not needed for `params["files"]` downloads — those are fetched via plain HTTPS GET from a pre-signed/public URL |
 
 Dependencies managed via Poetry; `.venv` is created in-project (`poetry.toml`).
 
