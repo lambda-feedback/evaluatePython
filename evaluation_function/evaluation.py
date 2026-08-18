@@ -3,7 +3,9 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import traceback
 from typing import Any
 
 import pycodestyle
@@ -328,13 +330,13 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         return result
 
     files_dir = None
-    file_warnings: list[str] = []
-    file_specs = params.get("files")
-    if file_specs:
-        files_dir = tempfile.mkdtemp()
-        file_warnings = download_files(file_specs, files_dir)
-
     try:
+        file_warnings: list[str] = []
+        file_specs = params.get("files")
+        if file_specs:
+            files_dir = tempfile.mkdtemp()
+            file_warnings = download_files(file_specs, files_dir)
+
         if mode == "demo":
             result = _evaluate_demo(str(response), result, files_dir)
         elif mode == "io_test":
@@ -343,21 +345,29 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         else:
             test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
             result = _evaluate_unit(str(response), test_code, result, files_dir=files_dir)
+
+        for warning in file_warnings:
+            result.add_feedback("error", warning)
+
+        pep8_param = params.get("pep8_feedback")
+        if pep8_param:
+            select = pep8_param if isinstance(pep8_param, list) else _PEP8_SELECT
+            violations = _check_pep8(str(response), select)
+            if violations:
+                body = "Style suggestions (PEP8):\n" + "\n".join(f"- {v}" for v in violations)
+            else:
+                body = "No style issues found."
+            result.add_feedback("style", body)
+    except Exception:
+        traceback.print_exc(file=sys.stderr)
+        result = Result()
+        result.add_feedback(
+            "error",
+            "An unexpected internal error occurred while evaluating this submission. "
+            "Please contact a course organizer.",
+        )
     finally:
         if files_dir is not None:
             shutil.rmtree(files_dir, ignore_errors=True)
-
-    for warning in file_warnings:
-        result.add_feedback("error", warning)
-
-    pep8_param = params.get("pep8_feedback")
-    if pep8_param:
-        select = pep8_param if isinstance(pep8_param, list) else _PEP8_SELECT
-        violations = _check_pep8(str(response), select)
-        if violations:
-            body = "Style suggestions (PEP8):\n" + "\n".join(f"- {v}" for v in violations)
-        else:
-            body = "No style issues found."
-        result.add_feedback("style", body)
 
     return result

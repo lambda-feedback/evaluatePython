@@ -45,7 +45,7 @@ class TestDownloadFiles(unittest.TestCase):
     def test_successful_download_writes_file(self, mock_get):
         mock_get.return_value = _fake_response(b"hello", content_length=5)
 
-        warnings = download_files([{"url": _URL, "filename": "data.csv"}], self.dest_dir)
+        warnings = download_files([{"url": _URL, "name": "data.csv"}], self.dest_dir)
 
         self.assertEqual(warnings, [])
         with open(os.path.join(self.dest_dir, "data.csv"), "rb") as f:
@@ -55,7 +55,7 @@ class TestDownloadFiles(unittest.TestCase):
     def test_oversized_via_header_skipped(self, mock_get):
         mock_get.return_value = _fake_response(b"x" * 10, content_length=_MAX_FILE_BYTES + 1)
 
-        warnings = download_files([{"url": _URL, "filename": "big.csv"}], self.dest_dir)
+        warnings = download_files([{"url": _URL, "name": "big.csv"}], self.dest_dir)
 
         self.assertEqual(len(warnings), 1)
         self.assertIn("big.csv", warnings[0])
@@ -67,7 +67,7 @@ class TestDownloadFiles(unittest.TestCase):
         big_content = b"x" * (_MAX_FILE_BYTES + 1)
         mock_get.return_value = _fake_response(big_content, content_length=10)
 
-        warnings = download_files([{"url": _URL, "filename": "big.csv"}], self.dest_dir)
+        warnings = download_files([{"url": _URL, "name": "big.csv"}], self.dest_dir)
 
         self.assertEqual(len(warnings), 1)
         self.assertIn("big.csv", warnings[0])
@@ -79,7 +79,7 @@ class TestDownloadFiles(unittest.TestCase):
         # _MAX_TOTAL_BYTES (allowed), the 5th is skipped without a request.
         mock_get.return_value = _fake_response(b"x" * _MAX_FILE_BYTES, content_length=_MAX_FILE_BYTES)
 
-        files = [{"url": _URL, "filename": f"{i}.csv"} for i in range(5)]
+        files = [{"url": _URL, "name": f"{i}.csv"} for i in range(5)]
         warnings = download_files(files, self.dest_dir)
 
         self.assertEqual(mock_get.call_count, 4)
@@ -96,8 +96,8 @@ class TestDownloadFiles(unittest.TestCase):
         mock_get.side_effect = side_effect
 
         files = [
-            {"url": "https://example.com/missing", "filename": "missing.csv"},
-            {"url": "https://example.com/ok", "filename": "ok.csv"},
+            {"url": "https://example.com/missing", "name": "missing.csv"},
+            {"url": "https://example.com/ok", "name": "ok.csv"},
         ]
         warnings = download_files(files, self.dest_dir)
 
@@ -109,20 +109,57 @@ class TestDownloadFiles(unittest.TestCase):
     def test_network_error_skipped(self, mock_get):
         mock_get.side_effect = requests.exceptions.ConnectionError("boom")
 
-        warnings = download_files([{"url": _URL, "filename": "data.csv"}], self.dest_dir)
+        warnings = download_files([{"url": _URL, "name": "data.csv"}], self.dest_dir)
 
         self.assertEqual(len(warnings), 1)
         self.assertIn("data.csv", warnings[0])
 
     def test_rejects_non_https_url(self):
         for bad_url in ("http://example.com/data.csv", "file:///etc/passwd", "ftp://example.com/data.csv"):
-            warnings = download_files([{"url": bad_url, "filename": "data.csv"}], self.dest_dir)
+            warnings = download_files([{"url": bad_url, "name": "data.csv"}], self.dest_dir)
             self.assertEqual(len(warnings), 1, f"expected a warning for url={bad_url!r}")
 
     def test_filename_validation_rejects_traversal(self):
         for bad_name in ("../evil.py", "/etc/passwd", "", ".", ".."):
-            warnings = download_files([{"url": _URL, "filename": bad_name}], self.dest_dir)
-            self.assertEqual(len(warnings), 1, f"expected a warning for filename={bad_name!r}")
+            warnings = download_files([{"url": _URL, "name": bad_name}], self.dest_dir)
+            self.assertEqual(len(warnings), 1, f"expected a warning for name={bad_name!r}")
+
+    def test_legacy_filename_key_skipped_not_raised(self):
+        # Reproduces the real-world crash report: client actually sends "name",
+        # not the old "filename" key. A spec using the wrong/legacy key must
+        # not raise KeyError — it should be skipped with a warning.
+        warnings = download_files(
+            [{"url": _URL, "filename": "score_utils.py", "type": "text/x-python-script", "size": 237}],
+            self.dest_dir,
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("missing", warnings[0].lower())
+
+    def test_missing_url_key_skipped_not_raised(self):
+        warnings = download_files([{"name": "data.csv"}], self.dest_dir)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("data.csv", warnings[0])
+
+    def test_non_dict_spec_skipped_not_raised(self):
+        warnings = download_files(["not-a-dict", 42, None], self.dest_dir)
+        self.assertEqual(len(warnings), 3)
+
+    def test_empty_spec_generic_message(self):
+        warnings = download_files([{}], self.dest_dir)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("missing", warnings[0].lower())
+
+    @patch("evaluation_function.s3_files.requests.get")
+    def test_malformed_spec_skipped_others_continue(self, mock_get):
+        mock_get.return_value = _fake_response(b"ok", content_length=2)
+        files = [
+            {"url": _URL, "filename": "score_utils.py"},  # wrong/legacy key, missing "name"
+            {"url": _URL, "name": "ok.csv"},
+        ]
+        warnings = download_files(files, self.dest_dir)
+
+        self.assertEqual(len(warnings), 1)
+        self.assertTrue(os.path.exists(os.path.join(self.dest_dir, "ok.csv")))
 
 
 if __name__ == "__main__":

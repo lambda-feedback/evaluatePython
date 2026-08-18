@@ -104,8 +104,8 @@ All source lives in `evaluation_function/`:
 {
     "mode": "demo",
     "files": [
-        {"url": "https://.../data.csv?X-Amz-Signature=...", "filename": "data.csv"},
-        {"url": "https://.../helper.py?X-Amz-Signature=...", "filename": "helper.py"},
+        {"url": "https://.../data.csv?X-Amz-Signature=...", "name": "data.csv"},
+        {"url": "https://.../helper.py?X-Amz-Signature=...", "name": "helper.py"},
     ]
 }
 ```

@@ -12,7 +12,7 @@ _CHUNK_SIZE = 65536
 
 class FileSpec(TypedDict):
     url: str
-    filename: str
+    name: str
 
 
 def _valid_filename(filename: str) -> bool:
@@ -69,8 +69,25 @@ def download_files(files: list[FileSpec], dest_dir: str) -> list[str]:
     total_bytes = 0
 
     for spec in files:
-        url = spec["url"]
-        filename = spec["filename"]
+        if not isinstance(spec, dict):
+            warnings.append(
+                "One of the provided files is missing required information (url/name) and was skipped."
+            )
+            continue
+
+        url = spec.get("url")
+        filename = spec.get("name")
+        has_url = isinstance(url, str) and bool(url)
+        has_filename = isinstance(filename, str) and bool(filename)
+
+        if not has_url or not has_filename:
+            if has_filename:
+                warnings.append(f"File '{filename}' is missing a valid URL and was not made available.")
+            else:
+                warnings.append(
+                    "One of the provided files is missing required information (url/name) and was skipped."
+                )
+            continue
 
         if not _valid_filename(filename):
             warnings.append(f"File '{filename}' has an invalid filename and was not made available.")
