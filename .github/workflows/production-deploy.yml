@@ -41,6 +41,10 @@ jobs:
     uses: lambda-feedback/evaluation-function-workflows/.github/workflows/deploy.yml@main
     with:
       template-repository-name: 'lambda-feedback/evaluation-function-boilerplate-python'
+      # gcp -> Cloud Run gen2 (see gcp_deploy.yml). gen2 gives full-Linux
+      # compatibility so shimmy's nsjail sandbox (SANDBOX_ENABLED=true in the
+      # Dockerfile) can create user namespaces -- AWS Lambda cannot.
+      build-platforms: "gcp"
       environment: "production"
       version-bump: ${{ inputs.version-bump }}
       branch: ${{ inputs.branch }}
