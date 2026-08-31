@@ -32,37 +32,43 @@ ENV FUNCTION_COMMAND="python"
 ENV FUNCTION_ARGS="-m,evaluation_function.main"
 
 # The transport to use for the RPC server.
-# stdio (not ipc): the worker runs inside an nsjail mount namespace with a
-# private tmpfs /tmp (see the sandbox settings below), so a host unix-socket
-# rendezvous at /tmp/eval.sock would be unreachable. shimmy's sandbox is
-# designed around stdio; lf_toolkit routes its logs to stderr, keeping stdout
+# stdio (not ipc): the sandboxed worker runs inside an nsjail mount namespace,
+# so the /tmp/eval.sock IPC rendezvous shimmy would otherwise use is fragile.
+# stdio sidesteps it; lf_toolkit sends its logs to stderr, so stdout stays
 # clean for the RPC framing.
 ENV FUNCTION_RPC_TRANSPORT="stdio"
 
 # --- Sandboxed execution of untrusted student code (shimmy + nsjail) ---
-# shimmy wraps the worker process -- and every `python` subprocess it spawns to
-# run a submission -- in an nsjail sandbox: unprivileged uid (nobody:nogroup),
-# a minimal bind-mounted view of the filesystem, and seccomp syscall filtering.
+# Always on for this function. shimmy wraps the worker process -- and every
+# `python` subprocess it spawns for a submission -- in an nsjail sandbox:
+# unprivileged uid (nobody:nogroup), a minimal bind-mounted filesystem, and a
+# seccomp syscall filter.
 #
-# Run-time requirements (cannot be expressed in the image):
-#   * the container must run with --privileged (or --cap-add SYS_ADMIN) so
-#     nsjail can create its namespaces -- see the shimmy README, "Sandboxed
-#     Execution". Without it the worker will not boot.
-#   * nsjail must exist at /usr/sbin/nsjail (provided by the base image's
-#     shimmy stage).
-# If the worker fails to start, drop SANDBOX_SECCOMP first, then widen
-# SANDBOX_RO_BINDS (the list is linux/x86_64 + Debian-specific).
+# DEPENDS ON THE BASE IMAGE shipping nsjail. shimmy provides the `--sandbox`
+# feature but not the nsjail binary; `evaluation-function-base/python` currently
+# copies only the shimmy binary, not `/usr/sbin/nsjail` or its shared libs
+# (libprotobuf, libnl-route-3, libcap2). Until that is fixed upstream, a build
+# of this image has shimmy fail to start (missing /usr/sbin/nsjail).
+# Tracking: lambda-feedback/evaluation-function-base -- add nsjail to the image.
 #
-# Network is deliberately left enabled -- the function uploads matplotlib
-# plots to S3 via boto3. Untrusted network/filesystem use is blocked one layer
-# up, at the AST gate in evaluation_function/security.py (check_code_safety).
+# RUN-TIME: the container must run with --privileged (or --cap-add SYS_ADMIN)
+# so nsjail can create its namespaces (shimmy README, "Sandboxed Execution").
 #
-# No CPU/memory rlimits here: the RPC worker is long-lived and shared across
-# requests, so a cumulative RLIMIT_CPU / RLIMIT_AS would eventually kill it.
-# Per-execution wall-clock limits are enforced in evaluation.py (_TIMEOUT).
+# Network stays enabled -- matplotlib plots are uploaded to S3 via boto3.
+# Untrusted network/filesystem use is already rejected before execution by the
+# AST gate in evaluation_function/security.py (check_code_safety).
+#
+# /tmp is a read-write bind of the container's own /tmp (not SANDBOX_TMPFS):
+# nsjail's tmpfs defaults to 4 MiB, too small for matplotlib's font cache and
+# plot output. No CPU/memory rlimits -- the RPC worker is long-lived and shared
+# across requests, so a cumulative RLIMIT_CPU/AS would eventually kill it;
+# per-run wall-clock limits live in evaluation.py (_TIMEOUT).
+#
+# The bind list is linux/x86_64 + Debian-specific (matches the CI/prod build
+# platform). If the worker fails to start, drop SANDBOX_SECCOMP first.
 ENV SANDBOX_ENABLED="true" \
     SANDBOX_SECCOMP="true" \
     SANDBOX_RO_BINDS="/usr:/lib:/lib64:/bin:/sbin:/etc:/app" \
-    SANDBOX_TMPFS="/tmp"
+    SANDBOX_RW_BINDS="/tmp"
 
 ENV LOG_LEVEL="debug"
