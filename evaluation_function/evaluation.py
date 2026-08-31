@@ -11,6 +11,8 @@ from PIL import Image
 from lf_toolkit.evaluation import Result, Params
 from lf_toolkit.evaluation.image_upload import upload_image, ImageUploadError
 
+from .security import check_code_safety
+
 _TIMEOUT = 25
 _UPLOAD_FOLDER = "evaluatePython"
 
@@ -301,6 +303,14 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     mode = params.get("mode")
     if mode not in ("demo", "io_test", "unit_test"):
         result.add_feedback("error", f"Unknown or missing mode: {mode!r}. Expected 'demo', 'io_test', or 'unit_test'.")
+        return result
+
+    violations = check_code_safety(str(response))
+    if violations:
+        result.add_feedback(
+            "error",
+            "Unsafe code detected -- not executed:\n" + "\n".join(f"- {v}" for v in violations),
+        )
         return result
 
     if mode == "demo":

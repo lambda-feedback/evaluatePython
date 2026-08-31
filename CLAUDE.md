@@ -125,16 +125,19 @@ docker build -t evaluatepython .
 # Cross-platform (CI uses linux/x86_64):
 docker build --platform=linux/x86_64 .
 
-# Run the server locally (port 8080)
-docker run -it --rm -p 8080:8080 evaluatepython
+# Run the server locally (port 8080).
+# --privileged is required: the image enables shimmy's nsjail sandbox
+# (SANDBOX_ENABLED=true), and nsjail needs it to create namespaces.
+docker run -it --rm --privileged -p 8080:8080 evaluatepython
 ```
 
 ## Tests
 
-Two test files, run with `pytest`:
+Three test files, run with `pytest`:
 
-- `evaluation_function/evaluation_test.py` — integration tests covering: all modes (demo, io_test, unit_test), all pass, partial fail, hidden test failure, runtime error, matplotlib plot capture, Hypothesis support
+- `evaluation_function/evaluation_test.py` — integration tests covering: all modes (demo, io_test, unit_test), all pass, partial fail, hidden test failure, runtime error, matplotlib plot capture, Hypothesis support, the pre-execution security gate
 - `evaluation_function/preview_test.py` — unit tests covering: valid Python, syntax errors, dangerous imports, dangerous builtins, dunder access
+- `evaluation_function/security_test.py` — unit tests for `check_code_safety` (the shared AST blocklist used by both `preview_function` and `evaluation_function`)
 
 CI runs on Python 3.12 and uploads JUnit XML results (`.github/workflows/test-lint.yml`).
 
@@ -146,9 +149,13 @@ CI runs on Python 3.12 and uploads JUnit XML results (`.github/workflows/test-li
 | `MPLBACKEND` | `Agg` | Set at subprocess runtime to suppress GUI |
 | `FUNCTION_COMMAND` | `python` | lf_toolkit runner |
 | `FUNCTION_ARGS` | `-m,evaluation_function.main` | lf_toolkit runner |
-| `FUNCTION_RPC_TRANSPORT` | `ipc` | lf_toolkit transport |
+| `FUNCTION_RPC_TRANSPORT` | `stdio` | shimmy↔worker transport (stdio so it survives the sandbox mount namespace) |
 | `LOG_LEVEL` | `debug` | Logging verbosity |
 | `AWS_*` / boto3 credentials | Runtime env | Required for S3 plot uploads |
+| `SANDBOX_ENABLED` | `true` | Wrap the worker in shimmy's nsjail sandbox (needs `--privileged` at run time) |
+| `SANDBOX_SECCOMP` | `true` | nsjail seccomp syscall filter |
+| `SANDBOX_RO_BINDS` | `/usr:/lib:/lib64:/bin:/sbin:/etc:/app` | Read-only bind mounts visible inside the jail |
+| `SANDBOX_TMPFS` | `/tmp` | Writable tmpfs inside the jail (student scripts, plot dirs, MPLCONFIGDIR) |
 
 Dependencies managed via Poetry; `.venv` is created in-project (`poetry.toml`).
 
@@ -156,4 +163,4 @@ Dependencies managed via Poetry; `.venv` is created in-project (`poetry.toml`).
 
 - Push to `main` triggers GitHub Actions (`.github/workflows/`) which builds and deploys to Lambda Feedback automatically
 - The function name is declared in `config.json` as `EvaluationFunctionName: "evaluatePython"` (lowerCamelCase)
-- The base Docker image is `ghcr.io/lambda-feedback/evaluation-function-base/python:test-sandbox-3.12`
+- The base Docker image is `ghcr.io/lambda-feedback/evaluation-function-base/python:3.12` (bundles shimmy + nsjail; sandboxing is enabled via the `SANDBOX_*` env vars in the Dockerfile, not by the base tag)

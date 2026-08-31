@@ -7,6 +7,12 @@
 - **`evaluation_function`** — run and grade student code
 - **`preview_function`** — static AST-based security check (called before execution)
 
+Both share the AST blocklist in `security.py` (`check_code_safety`). `preview_function`
+runs it pre-submission; `evaluation_function` also runs it as a hard gate — if the
+submission trips the blocklist it is **not executed** and an `error` item is returned.
+At the container level, shimmy additionally wraps execution in an nsjail sandbox
+(`SANDBOX_*` env in the `Dockerfile`).
+
 ---
 
 ## `evaluation_function`
@@ -173,7 +179,9 @@ The check runs in-process via `pycodestyle.Checker` with `max_line_length=200` (
 
 ## `preview_function`
 
-Called before evaluation. Parses the student code as an AST and checks for security violations.
+Called before evaluation. Parses the student code as an AST and checks for security
+violations via `security.check_code_safety`. The same check gates `evaluation_function`,
+so the blocklist below applies to both entry points.
 
 ### Blocked constructs
 

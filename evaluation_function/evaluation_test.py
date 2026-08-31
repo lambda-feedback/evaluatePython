@@ -331,3 +331,39 @@ class TestPep8Feedback(unittest.TestCase):
         result = evaluation_function(_SQUARE_CODE, None, params).to_dict()
         self.assertTrue(result["is_correct"])
         self.assertIn("No style issues found", result["feedback"])
+
+
+class TestSecurityGate(unittest.TestCase):
+
+    def test_blocked_import_not_executed(self):
+        result = evaluation_function(
+            "import os\nprint(os.getcwd())", None, {"mode": "demo"}
+        ).to_dict()
+        self.assertFalse(result["is_correct"])
+        self.assertIn("Unsafe code detected", result["feedback"])
+        self.assertIn("os", result["feedback"])
+
+    def test_blocked_builtin_not_executed(self):
+        result = evaluation_function(
+            "eval('1 + 1')", None, _params(_test("", ""))
+        ).to_dict()
+        self.assertIn("Unsafe code detected", result["feedback"])
+        self.assertNotIn("tests passed", result["feedback"])
+
+    def test_dunder_access_blocked_in_unit_test(self):
+        result = evaluation_function(
+            "().__class__.__bases__", None, _unit_params(_SQUARE_TESTS)
+        ).to_dict()
+        self.assertIn("Unsafe code detected", result["feedback"])
+
+    def test_safe_stdlib_import_still_runs(self):
+        result = evaluation_function(
+            "import math\nprint(math.sqrt(16))", None, {"mode": "demo"}
+        ).to_dict()
+        self.assertIn("4.0", result["feedback"])
+        self.assertNotIn("Unsafe", result["feedback"])
+
+    def test_syntax_error_passes_gate_and_surfaces_downstream(self):
+        result = evaluation_function("def f(:\n", None, {"mode": "demo"}).to_dict()
+        self.assertNotIn("Unsafe code detected", result["feedback"])
+        self.assertIn("SyntaxError", result["feedback"])

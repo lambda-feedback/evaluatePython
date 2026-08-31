@@ -12,10 +12,12 @@ Push to `main` triggers GitHub Actions which automatically builds and deploys to
 ### Run the Docker Image
 
 ```bash
-docker run -it --rm -p 8080:8080 ghcr.io/lambda-feedback/evaluatepython:latest
+docker run -it --rm --privileged -p 8080:8080 ghcr.io/lambda-feedback/evaluatepython:latest
 ```
 
 The image includes [Shimmy](https://github.com/lambda-feedback/shimmy), which listens for HTTP requests on port 8080 and forwards them to the evaluation function.
+
+`--privileged` (or `--cap-add SYS_ADMIN`) is required: the image runs student code inside Shimmy's [nsjail](https://github.com/google/nsjail) sandbox (`SANDBOX_ENABLED=true`), and nsjail needs those privileges to create its namespaces. The sandbox runs the worker as `nobody` with a minimal bind-mounted filesystem and seccomp filtering; untrusted imports/builtins are additionally rejected before execution by the AST check in `evaluation_function/security.py`.
 
 ### Evaluation Modes
 
@@ -80,10 +82,12 @@ Add `"pep8_feedback": true` to any mode to append a style check to the feedback.
 ```
 evaluation_function/main.py             # IPC server entry point
 evaluation_function/evaluation.py       # core evaluation pipeline (all three modes)
-evaluation_function/preview.py          # AST-based security validator
+evaluation_function/security.py         # shared AST blocklist (check_code_safety)
+evaluation_function/preview.py          # pre-submission validator (syntax + security)
 evaluation_function/dev.py              # CLI wrapper for local testing
 evaluation_function/evaluation_test.py  # integration tests
 evaluation_function/preview_test.py     # preview/security tests
+evaluation_function/security_test.py    # check_code_safety unit tests
 config.json                             # deployment configuration
 ```
 
@@ -144,8 +148,10 @@ docker build --platform=linux/x86_64 -t evaluatepython .
 ### Running the Docker Image
 
 ```bash
-docker run -it --rm -p 8080:8080 evaluatepython
+docker run -it --rm --privileged -p 8080:8080 evaluatepython
 ```
+
+`--privileged` is required for the nsjail sandbox (see [Run the Docker Image](#run-the-docker-image)). To run without it for local debugging, disable the sandbox: add `-e SANDBOX_ENABLED=false`.
 
 ## Deployment to Lambda Feedback
 
