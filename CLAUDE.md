@@ -9,7 +9,7 @@ All source lives in `evaluation_function/`:
 | File | Role |
 |------|------|
 | `main.py` | IPC server entry point; registers `evaluation_function` and `preview_function` with lf_toolkit |
-| `evaluation.py` | Core evaluation pipeline: security check → subprocess execution → output comparison → S3 plot upload → structured feedback |
+| `evaluation.py` | Core evaluation pipeline: security check → subprocess execution → output comparison → plot upload (GCS/S3 via lf_toolkit) → structured feedback |
 | `preview.py` | AST-based pre-execution security validator (`_SecurityVisitor`) |
 | `dev.py` | CLI wrapper for local manual testing |
 
@@ -20,7 +20,7 @@ All source lives in `evaluation_function/`:
    - **`demo`**: execute code with no stdin; return stdout/plots as `output` feedback (no pass/fail)
    - **`io_test`**: for each test in `params["tests"]`, execute with `test["input"]` as stdin and compare stdout against `test["expected_output"]`; upload matplotlib plots on pass or fail
    - **`unit_test`**: append `params["test_code"]` + unit-runner harness to student code; execute once; parse JSON results; supports plain `test_*` functions, `unittest.TestCase` subclasses, and Hypothesis-based tests
-3. Upload any captured matplotlib figures to S3 (`_UPLOAD_FOLDER = "evaluatePython"`)
+3. Upload any captured matplotlib figures via `lf_toolkit` `upload_image` (`_UPLOAD_FOLDER = "evaluatePython"`); backend is GCS or S3 per `IMAGE_UPLOAD_BACKEND`
 4. Return a `Result` with feedback tags: `pass`, `fail`, `hidden_fail`, `error`, `output`, `summary`
 
 ### Request shape
@@ -151,7 +151,9 @@ CI runs on Python 3.12 and uploads JUnit XML results (`.github/workflows/test-li
 | `FUNCTION_ARGS` | `-m,evaluation_function.main` | lf_toolkit runner |
 | `FUNCTION_RPC_TRANSPORT` | `stdio` | shimmy↔worker transport (stdio so it survives the sandbox mount namespace) |
 | `LOG_LEVEL` | `debug` | Logging verbosity |
-| `AWS_*` / boto3 credentials | Runtime env | Required for S3 plot uploads |
+| `IMAGE_UPLOAD_BACKEND` | `gcs` | Plot upload backend in lf_toolkit (`gcs` set in Dockerfile; override to `s3` on the service to use AWS) |
+| `GCS_BUCKET` | Runtime env | Target bucket for matplotlib plot uploads; set per-environment on the Cloud Run service. Auth is via the runtime service account (ADC) — no keys |
+| `AWS_*` / `S3_BUCKET_URI` | Runtime env | Only for the legacy S3 plot-upload backend (`IMAGE_UPLOAD_BACKEND=s3`) |
 | `SANDBOX_ENABLED` | `true` | Wrap the worker in shimmy's nsjail sandbox (needs `--privileged` at run time) |
 | `SANDBOX_SECCOMP` | `true` | nsjail seccomp syscall filter |
 | `SANDBOX_RO_BINDS` | `/usr:/lib:/lib64:/bin:/sbin:/etc:/app` | Read-only bind mounts visible inside the jail |

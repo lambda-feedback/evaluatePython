@@ -49,7 +49,7 @@ ENV FUNCTION_RPC_TRANSPORT="stdio"
 # needs CAP_SYS_ADMIN for unshare(CLONE_NEWNS). Running as uid 0, nsjail's "auto"
 # userns handling then drops CLONE_NEWUSER (a nested userns' unprivileged gid_map
 # write fails); --user still drops the worker to nobody. Network stays up so
-# matplotlib plots can be uploaded to S3 via boto3.
+# matplotlib plots can be uploaded to object storage (see below).
 #
 # SANDBOX_RO_BINDS / _RW_BINDS: shimmy splits these env vars on COMMA. Bind "/"
 # read-only (whole rootfs -- arch-independent, where an explicit list would need
@@ -61,6 +61,13 @@ ENV FUNCTION_RPC_TRANSPORT="stdio"
 # creation on some hosts ("pthread_create ... Invalid argument"); the mount and
 # user namespaces still isolate the filesystem and privileges.
 #
+# Network stays up so matplotlib plots (see evaluation.py::_upload_plots) can be
+# pushed to object storage. On GCP we use lf_toolkit's GCS backend
+# (IMAGE_UPLOAD_BACKEND=gcs): the worker authenticates with Application Default
+# Credentials via the Cloud Run runtime service account -- no static keys -- and
+# needs GCS_BUCKET set on the service (staging/prod differ). To fall back to S3,
+# override IMAGE_UPLOAD_BACKEND=s3 on the service and set S3_BUCKET_URI / AWS_*.
+#
 # No seccomp (nsjail has no built-in default policy; the fixed shimmy takes a
 # kafel policy via SANDBOX_SECCOMP_STRING / _POLICY_FILE if wanted) and no
 # rlimits (the RPC worker is long-lived and shared; per-run limits are the
@@ -69,5 +76,9 @@ ENV SANDBOX_ENABLED="true" \
     SANDBOX_RO_BINDS="/" \
     SANDBOX_RW_BINDS="/tmp" \
     SANDBOX_DISABLE_CLONE_NEWPID="true"
+
+# Plot upload backend (lf_toolkit). GCS_BUCKET is supplied per-environment on the
+# Cloud Run service.
+ENV IMAGE_UPLOAD_BACKEND="gcs"
 
 ENV LOG_LEVEL="debug"
