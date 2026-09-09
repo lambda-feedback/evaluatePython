@@ -343,15 +343,15 @@ def _coerce_file_specs(raw: Any) -> list:
     return specs
 
 
-def _resolve_submission(response: Any, params: Params) -> tuple[str, list]:
-    """Split the submission into (code, file_specs).
+def _unwrap_payload(value: Any) -> tuple[str, list]:
+    """Return (code, file_specs) from a submission or answer value.
 
-    When file upload is enabled, the LF web client delivers the response
-    payload as {"code": ..., "files": [...]} (sometimes as a JSON string of
-    that object) rather than a bare code string. Files listed in the
-    response take precedence; params["files"] is the fallback.
+    When file upload is enabled, the LF web client delivers the value as
+    {"code": ..., "files": [...]} (sometimes as a JSON string of that
+    object) rather than a bare code string. A plain string is returned
+    unchanged with no files.
     """
-    payload = response
+    payload = value
     if isinstance(payload, str):
         try:
             parsed = json.loads(payload)
@@ -361,14 +361,27 @@ def _resolve_submission(response: Any, params: Params) -> tuple[str, list]:
             payload = parsed
 
     if isinstance(payload, dict):
-        code = payload.get("code") or ""
-        response_files = _coerce_file_specs(payload.get("files"))
-    else:
-        code = payload if isinstance(payload, str) else str(payload)
-        response_files = []
+        return str(payload.get("code") or ""), _coerce_file_specs(payload.get("files"))
+    if isinstance(payload, str):
+        return payload, []
+    return str(payload), []
 
+
+def _resolve_submission(response: Any, params: Params) -> tuple[str, list]:
+    """Split the submission into (code, file_specs).
+
+    Files listed in the response take precedence; params["files"] is the
+    fallback.
+    """
+    code, response_files = _unwrap_payload(response)
     file_specs = response_files or _coerce_file_specs(params.get("files"))
-    return str(code), file_specs
+    return code, file_specs
+
+
+def _answer_code(answer: Any) -> str:
+    """The code string from the answer field, unwrapping a {code, files}
+    payload the same way the submission is unwrapped."""
+    return _unwrap_payload(answer)[0]
 
 
 def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
@@ -398,10 +411,10 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         if mode == "demo":
             result = _evaluate_demo(code, result, files_dir)
         elif mode == "io_test":
-            ans = str(answer) if params.get("use_answer_as_expected_output") else ""
+            ans = _answer_code(answer) if params.get("use_answer_as_expected_output") else ""
             result = _evaluate_io(code, params.get("tests", []), result, answer=ans, files_dir=files_dir)
         else:
-            test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
+            test_code = _answer_code(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
             result = _evaluate_unit(code, test_code, result, files_dir=files_dir)
 
         for warning in file_warnings:

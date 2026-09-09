@@ -479,6 +479,42 @@ class TestFilesInResponsePayload(unittest.TestCase):
             mock_download.assert_not_called()
 
 
+class TestAnswerFieldPayload(unittest.TestCase):
+    """With the file-upload widget the answer field is delivered in the same
+    {"code", "files"} shape as the submission, not as a bare string."""
+
+    def test_unit_test_code_from_answer_dict(self):
+        response = {"code": "def square(n):\n    return n * n\n"}
+        answer = {"code": "def test_sq():\n    assert square(4) == 16\n", "files": []}
+        params = {"mode": "unit_test", "use_answer_as_test_code": True}
+        result = evaluation_function(response, answer, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+    def test_unit_test_code_from_answer_json_string(self):
+        answer = json.dumps({"code": "def test_ok():\n    assert True\n", "files": []})
+        params = {"mode": "unit_test", "use_answer_as_test_code": True}
+        result = evaluation_function({"code": ""}, answer, params).to_dict()
+
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+    def test_io_expected_output_from_answer_dict(self):
+        response = {"code": "print(6)"}
+        answer = {"code": "print(2 * 3)", "files": []}
+        params = {"mode": "io_test", "use_answer_as_expected_output": True,
+                  "tests": [{"input": ""}]}
+        result = evaluation_function(response, answer, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+
+    def test_plain_string_answer_still_works(self):
+        params = {"mode": "unit_test", "use_answer_as_test_code": True}
+        result = evaluation_function("x = 1", "def test_ok():\n    assert True\n", params).to_dict()
+
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+
 class TestUnexpectedExceptionHandling(unittest.TestCase):
 
     @patch("evaluation_function.evaluation._run_code")
