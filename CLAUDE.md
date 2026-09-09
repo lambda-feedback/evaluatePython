@@ -17,7 +17,7 @@ All source lives in `evaluation_function/`:
 ### Evaluation pipeline (`evaluation.py`)
 
 1. Run AST security check on student code
-2. If `params["files"]` is set, download the listed S3 objects once into a per-request working directory (see `s3_files.py`), used as the subprocess `cwd` for every run in this request
+2. Resolve the submission into `(code, file_specs)` via `_resolve_submission`: the response may be a bare code string, or a `{"code", "files"}` object (or JSON string of one) as sent by the LF web client's upload widget. If `file_specs` (from `response["files"]`, else `params["files"]`) is non-empty, download the listed objects once into a per-request working directory (see `s3_files.py`), used as the subprocess `cwd` for every run in this request
 3. Dispatch by `params["mode"]` (required):
    - **`demo`**: execute code with no stdin; return stdout/plots as `output` feedback (no pass/fail)
    - **`io_test`**: for each test in `params["tests"]`, execute with `test["input"]` as stdin and compare stdout against `test["expected_output"]`; upload matplotlib plots on pass or fail
@@ -108,6 +108,17 @@ All source lives in `evaluation_function/`:
         {"url": "https://.../helper.py?X-Amz-Signature=...", "name": "helper.py"},
     ]
 }
+
+# files in the response payload (how the LF web client sends uploads)
+# When the response area has a file-upload widget, the client delivers the
+# submission as {"code": ..., "files": [...]} (sometimes as a JSON string of
+# that object), with each file entry itself possibly a JSON string.
+# evaluation_function unpacks this: response["code"] becomes the student
+# code, response["files"] becomes the file list. Files in the response take
+# precedence over params["files"], which stays as a fallback. Entry shape is
+# the same {"url", "name"} as params["files"].
+{"code": "print(open('data.csv').read())",
+ "files": [{"url": "https://.../data.csv?...", "name": "data.csv"}]}
 ```
 
 ### Security model (`preview.py`)

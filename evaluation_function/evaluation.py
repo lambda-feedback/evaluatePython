@@ -322,6 +322,54 @@ def _evaluate_unit(response: str, test_code: str, result: Result, files_dir: str
     return result
 
 
+def _coerce_file_specs(raw: Any) -> list:
+    """Normalise a raw files value into a list of {url, name} dicts.
+
+    Entries may already be dicts, or JSON-encoded strings — the LF web
+    client currently serialises each upload entry to a string.
+    """
+    if not isinstance(raw, (list, tuple)):
+        return []
+    specs = []
+    for entry in raw:
+        if isinstance(entry, str):
+            try:
+                entry = json.loads(entry)
+            except (ValueError, TypeError):
+                continue
+        if isinstance(entry, dict):
+            specs.append(entry)
+    return specs
+
+
+def _resolve_submission(response: Any, params: Params) -> tuple[str, list]:
+    """Split the submission into (code, file_specs).
+
+    When file upload is enabled, the LF web client delivers the response
+    payload as {"code": ..., "files": [...]} (sometimes as a JSON string of
+    that object) rather than a bare code string. Files listed in the
+    response take precedence; params["files"] is the fallback.
+    """
+    payload = response
+    if isinstance(payload, str):
+        try:
+            parsed = json.loads(payload)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, dict) and ("code" in parsed or "files" in parsed):
+            payload = parsed
+
+    if isinstance(payload, dict):
+        code = payload.get("code") or ""
+        response_files = _coerce_file_specs(payload.get("files"))
+    else:
+        code = payload if isinstance(payload, str) else str(payload)
+        response_files = []
+
+    file_specs = response_files or _coerce_file_specs(params.get("files"))
+    return str(code), file_specs
+
+
 def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     result = Result()
     mode = params.get("mode")
@@ -329,22 +377,23 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         result.add_feedback("error", f"Unknown or missing mode: {mode!r}. Expected 'demo', 'io_test', or 'unit_test'.")
         return result
 
+    code, file_specs = _resolve_submission(response, params)
+
     files_dir = None
     try:
         file_warnings: list[str] = []
-        file_specs = params.get("files")
         if file_specs:
             files_dir = tempfile.mkdtemp()
             file_warnings = download_files(file_specs, files_dir)
 
         if mode == "demo":
-            result = _evaluate_demo(str(response), result, files_dir)
+            result = _evaluate_demo(code, result, files_dir)
         elif mode == "io_test":
             ans = str(answer) if params.get("use_answer_as_expected_output") else ""
-            result = _evaluate_io(str(response), params.get("tests", []), result, answer=ans, files_dir=files_dir)
+            result = _evaluate_io(code, params.get("tests", []), result, answer=ans, files_dir=files_dir)
         else:
             test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
-            result = _evaluate_unit(str(response), test_code, result, files_dir=files_dir)
+            result = _evaluate_unit(code, test_code, result, files_dir=files_dir)
 
         for warning in file_warnings:
             result.add_feedback("error", warning)
@@ -352,7 +401,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         pep8_param = params.get("pep8_feedback")
         if pep8_param:
             select = pep8_param if isinstance(pep8_param, list) else _PEP8_SELECT
-            violations = _check_pep8(str(response), select)
+            violations = _check_pep8(code, select)
             if violations:
                 body = "Style suggestions (PEP8):\n" + "\n".join(f"- {v}" for v in violations)
             else:
