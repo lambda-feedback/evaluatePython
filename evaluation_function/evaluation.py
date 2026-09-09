@@ -14,6 +14,7 @@ from lf_toolkit.evaluation import Result, Params
 from lf_toolkit.evaluation.image_upload import upload_image, ImageUploadError
 
 from .s3_files import download_files
+from .security import check_code_safety
 
 _TIMEOUT = 25
 _UPLOAD_FOLDER = "evaluatePython"
@@ -378,6 +379,14 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         return result
 
     code, file_specs = _resolve_submission(response, params)
+
+    violations = check_code_safety(code)
+    if violations:
+        result.add_feedback(
+            "error",
+            "Unsafe code detected -- not executed:\n" + "\n".join(f"- {v}" for v in violations),
+        )
+        return result
 
     files_dir = None
     try:
