@@ -367,6 +367,52 @@ class TestFileDownloads(unittest.TestCase):
 
         self.assertIn("16", result["feedback"])
 
+    @patch("evaluation_function.evaluation.download_files")
+    def test_file_entries_as_json_strings(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "42"})
+        params = {"mode": "demo", "files": [json.dumps({"url": "https://example.com/k", "name": "data.csv"})]}
+        result = evaluation_function("print(open('data.csv').read())", None, params).to_dict()
+
+        self.assertIn("42", result["feedback"])
+        passed_specs = mock_download.call_args[0][0]
+        self.assertEqual(passed_specs, [{"url": "https://example.com/k", "name": "data.csv"}])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_answer_files_param(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "teacher"})
+        params = {"mode": "demo", "answer_files": [{"url": "https://example.com/t", "name": "data.csv"}]}
+        result = evaluation_function("print(open('data.csv').read())", None, params).to_dict()
+
+        self.assertIn("teacher", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_response_files_param(self, mock_download):
+        mock_download.side_effect = _stub_download({"mine.csv": "student"})
+        params = {"mode": "demo", "response_files": [{"url": "https://example.com/s", "name": "mine.csv"}]}
+        result = evaluation_function("print(open('mine.csv').read())", None, params).to_dict()
+
+        self.assertIn("student", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_answer_and_response_files_combined(self, mock_download):
+        mock_download.return_value = []
+        params = {
+            "mode": "demo",
+            "answer_files": [{"url": "https://example.com/t", "name": "data.csv"}],
+            "response_files": [
+                {"url": "https://example.com/s1", "name": "mine.csv"},
+                {"url": "https://example.com/s2", "name": "data.csv"},
+            ],
+        }
+        evaluation_function("print('hi')", None, params)
+
+        mock_download.assert_called_once()
+        passed_specs = mock_download.call_args[0][0]
+        self.assertEqual(passed_specs, [
+            {"url": "https://example.com/s1", "name": "mine.csv"},
+            {"url": "https://example.com/t", "name": "data.csv"},
+        ])
+
     def test_no_files_param_no_download_call(self):
         with patch("evaluation_function.evaluation.download_files") as mock_download:
             evaluation_function("print('hi')", None, {"mode": "demo"})
@@ -391,128 +437,6 @@ class TestMalformedFileSpec(unittest.TestCase):
 
         self.assertIn("hi", result["feedback"])
         self.assertIn("missing", result["feedback"].lower())
-
-
-class TestFilesInResponsePayload(unittest.TestCase):
-    """The LF web client delivers uploads inside the response payload as
-    {"code": ..., "files": [...]} rather than in params["files"]."""
-
-    @patch("evaluation_function.evaluation.download_files")
-    def test_response_dict_with_code_and_files(self, mock_download):
-        mock_download.side_effect = _stub_download({"data.csv": "1,2,3"})
-        response = {
-            "code": "print(open('data.csv').read())",
-            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
-        }
-        result = evaluation_function(response, None, {"mode": "demo"}).to_dict()
-
-        self.assertIn("1,2,3", result["feedback"])
-        mock_download.assert_called_once()
-        passed_specs = mock_download.call_args[0][0]
-        self.assertEqual(passed_specs, [{"url": "https://example.com/k", "name": "data.csv"}])
-
-    @patch("evaluation_function.evaluation.download_files")
-    def test_response_dict_file_entries_are_json_strings(self, mock_download):
-        mock_download.side_effect = _stub_download({"data.csv": "42"})
-        response = {
-            "code": "print(open('data.csv').read())",
-            "files": [json.dumps({"url": "https://example.com/k", "name": "data.csv"})],
-        }
-        result = evaluation_function(response, None, {"mode": "demo"}).to_dict()
-
-        self.assertIn("42", result["feedback"])
-        passed_specs = mock_download.call_args[0][0]
-        self.assertEqual(passed_specs, [{"url": "https://example.com/k", "name": "data.csv"}])
-
-    @patch("evaluation_function.evaluation.download_files")
-    def test_response_is_json_string_of_payload(self, mock_download):
-        mock_download.side_effect = _stub_download({"data.csv": "7"})
-        response = json.dumps({
-            "code": "print(open('data.csv').read())",
-            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
-        })
-        result = evaluation_function(response, None, {"mode": "demo"}).to_dict()
-
-        self.assertIn("7", result["feedback"])
-        mock_download.assert_called_once()
-
-    @patch("evaluation_function.evaluation.download_files")
-    def test_unit_test_mode_reads_files_from_response(self, mock_download):
-        mock_download.side_effect = _stub_download({"data.csv": "x"})
-        response = {
-            "code": "",
-            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
-        }
-        params = {
-            "mode": "unit_test",
-            "test_code": "import os\ndef test_present():\n    assert os.path.isfile('data.csv')\n",
-        }
-        result = evaluation_function(response, None, params).to_dict()
-
-        self.assertTrue(result["is_correct"])
-        self.assertIn("1/1 tests passed", result["feedback"])
-
-    @patch("evaluation_function.evaluation.download_files")
-    def test_plain_string_response_still_uses_params_files(self, mock_download):
-        mock_download.side_effect = _stub_download({"data.csv": "9"})
-        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
-        result = evaluation_function("print(open('data.csv').read())", None, params).to_dict()
-
-        self.assertIn("9", result["feedback"])
-
-    @patch("evaluation_function.evaluation.download_files")
-    def test_response_files_take_precedence_over_params_files(self, mock_download):
-        mock_download.side_effect = _stub_download({"data.csv": "from_response"})
-        response = {
-            "code": "print(open('data.csv').read())",
-            "files": [{"url": "https://example.com/response", "name": "data.csv"}],
-        }
-        params = {"mode": "demo", "files": [{"url": "https://example.com/params", "name": "other.csv"}]}
-        evaluation_function(response, None, params)
-
-        passed_specs = mock_download.call_args[0][0]
-        self.assertEqual(passed_specs, [{"url": "https://example.com/response", "name": "data.csv"}])
-
-    def test_response_dict_without_files_no_download(self):
-        with patch("evaluation_function.evaluation.download_files") as mock_download:
-            evaluation_function({"code": "print('hi')"}, None, {"mode": "demo"})
-            mock_download.assert_not_called()
-
-
-class TestAnswerFieldPayload(unittest.TestCase):
-    """With the file-upload widget the answer field is delivered in the same
-    {"code", "files"} shape as the submission, not as a bare string."""
-
-    def test_unit_test_code_from_answer_dict(self):
-        response = {"code": "def square(n):\n    return n * n\n"}
-        answer = {"code": "def test_sq():\n    assert square(4) == 16\n", "files": []}
-        params = {"mode": "unit_test", "use_answer_as_test_code": True}
-        result = evaluation_function(response, answer, params).to_dict()
-
-        self.assertTrue(result["is_correct"])
-        self.assertIn("1/1 tests passed", result["feedback"])
-
-    def test_unit_test_code_from_answer_json_string(self):
-        answer = json.dumps({"code": "def test_ok():\n    assert True\n", "files": []})
-        params = {"mode": "unit_test", "use_answer_as_test_code": True}
-        result = evaluation_function({"code": ""}, answer, params).to_dict()
-
-        self.assertIn("1/1 tests passed", result["feedback"])
-
-    def test_io_expected_output_from_answer_dict(self):
-        response = {"code": "print(6)"}
-        answer = {"code": "print(2 * 3)", "files": []}
-        params = {"mode": "io_test", "use_answer_as_expected_output": True,
-                  "tests": [{"input": ""}]}
-        result = evaluation_function(response, answer, params).to_dict()
-
-        self.assertTrue(result["is_correct"])
-
-    def test_plain_string_answer_still_works(self):
-        params = {"mode": "unit_test", "use_answer_as_test_code": True}
-        result = evaluation_function("x = 1", "def test_ok():\n    assert True\n", params).to_dict()
-
-        self.assertIn("1/1 tests passed", result["feedback"])
 
 
 class TestUnexpectedExceptionHandling(unittest.TestCase):

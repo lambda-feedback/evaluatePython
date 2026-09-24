@@ -327,7 +327,7 @@ def _coerce_file_specs(raw: Any) -> list:
     """Normalise a raw files value into a list of {url, name} dicts.
 
     Entries may already be dicts, or JSON-encoded strings — the LF web
-    client currently serialises each upload entry to a string.
+    client may serialise each upload entry to a string.
     """
     if not isinstance(raw, (list, tuple)):
         return []
@@ -343,45 +343,19 @@ def _coerce_file_specs(raw: Any) -> list:
     return specs
 
 
-def _unwrap_payload(value: Any) -> tuple[str, list]:
-    """Return (code, file_specs) from a submission or answer value.
+def _collect_file_specs(params: Params) -> list:
+    """Gather the files to make available for this request.
 
-    When file upload is enabled, the LF web client delivers the value as
-    {"code": ..., "files": [...]} (sometimes as a JSON string of that
-    object) rather than a bare code string. A plain string is returned
-    unchanged with no files.
+    The LF client passes the teacher's files as params["answer_files"]
+    (saved in the response area's grade params) and the student's uploads
+    as params["response_files"] (sent with each check). params["files"] is
+    accepted as a legacy alias for answer_files. All files land in one
+    working directory; on a name clash the teacher's file wins.
     """
-    payload = value
-    if isinstance(payload, str):
-        try:
-            parsed = json.loads(payload)
-        except (ValueError, TypeError):
-            parsed = None
-        if isinstance(parsed, dict) and ("code" in parsed or "files" in parsed):
-            payload = parsed
-
-    if isinstance(payload, dict):
-        return str(payload.get("code") or ""), _coerce_file_specs(payload.get("files"))
-    if isinstance(payload, str):
-        return payload, []
-    return str(payload), []
-
-
-def _resolve_submission(response: Any, params: Params) -> tuple[str, list]:
-    """Split the submission into (code, file_specs).
-
-    Files listed in the response take precedence; params["files"] is the
-    fallback.
-    """
-    code, response_files = _unwrap_payload(response)
-    file_specs = response_files or _coerce_file_specs(params.get("files"))
-    return code, file_specs
-
-
-def _answer_code(answer: Any) -> str:
-    """The code string from the answer field, unwrapping a {code, files}
-    payload the same way the submission is unwrapped."""
-    return _unwrap_payload(answer)[0]
+    teacher = _coerce_file_specs(params.get("answer_files")) + _coerce_file_specs(params.get("files"))
+    student = _coerce_file_specs(params.get("response_files"))
+    teacher_names = {spec.get("name") for spec in teacher}
+    return [spec for spec in student if spec.get("name") not in teacher_names] + teacher
 
 
 def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
@@ -391,7 +365,8 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         result.add_feedback("error", f"Unknown or missing mode: {mode!r}. Expected 'demo', 'io_test', or 'unit_test'.")
         return result
 
-    code, file_specs = _resolve_submission(response, params)
+    code = str(response)
+    file_specs = _collect_file_specs(params)
 
     violations = check_code_safety(code)
     if violations:
@@ -411,10 +386,10 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         if mode == "demo":
             result = _evaluate_demo(code, result, files_dir)
         elif mode == "io_test":
-            ans = _answer_code(answer) if params.get("use_answer_as_expected_output") else ""
+            ans = str(answer) if params.get("use_answer_as_expected_output") else ""
             result = _evaluate_io(code, params.get("tests", []), result, answer=ans, files_dir=files_dir)
         else:
-            test_code = _answer_code(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
+            test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
             result = _evaluate_unit(code, test_code, result, files_dir=files_dir)
 
         for warning in file_warnings:
