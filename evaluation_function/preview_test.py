@@ -54,3 +54,24 @@ class TestPreviewFunction(unittest.TestCase):
 
         self.assertIn("preview", result)
         self.assertNotIn("Unsafe", result["preview"].get("feedback", ""))
+
+    def test_open_is_allowed(self):
+        response, params = "f = open('data.csv')\nf.read()", Params()
+        result = preview_function(response, params)
+
+        self.assertIn("preview", result)
+        self.assertNotIn("Unsafe", result["preview"].get("feedback", ""))
+
+    def test_pathlib_import_allowed(self):
+        response, params = "from pathlib import Path\nPath('data.csv').read_text()", Params()
+        result = preview_function(response, params)
+
+        self.assertIn("preview", result)
+        self.assertNotIn("Unsafe", result["preview"].get("feedback", ""))
+
+    def test_os_still_blocked(self):
+        response, params = "import os\nos.system('ls')", Params()
+        result = preview_function(response, params)
+
+        self.assertIn("preview", result)
+        self.assertIn("Unsafe", result["preview"].get("feedback", ""))

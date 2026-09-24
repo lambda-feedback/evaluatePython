@@ -35,8 +35,14 @@ class TestCheckCodeSafety(unittest.TestCase):
     def test_syntax_error_is_not_a_violation(self):
         self.assertEqual(check_code_safety("def f(:\n"), [])
 
+    def test_open_and_pathlib_are_allowed(self):
+        # Student code needs these to read files supplied via params["files"]
+        # / the response payload; write access is blocked at runtime instead.
+        self.assertEqual(check_code_safety("open('data.csv').read()"), [])
+        self.assertEqual(check_code_safety("import pathlib\npathlib.Path('data.csv')"), [])
+
     def test_multiple_violations_collected(self):
-        violations = check_code_safety("import os\nimport socket\nopen('/etc/passwd')")
+        violations = check_code_safety("import os\nimport socket\nexec('x = 1')")
         self.assertIn("import of 'os' is not allowed", violations)
         self.assertIn("import of 'socket' is not allowed", violations)
-        self.assertIn("use of 'open()' is not allowed", violations)
+        self.assertIn("use of 'exec()' is not allowed", violations)
