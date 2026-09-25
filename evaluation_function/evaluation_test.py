@@ -1,3 +1,6 @@
+import json
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -300,6 +303,302 @@ class TestUnitTestMode(unittest.TestCase):
         self.assertFalse(result["is_correct"])
         self.assertIn("0/1 tests passed", result["feedback"])
         self.assertIn("square(", result["feedback"])
+
+
+def _stub_download(content_by_filename):
+    def fake_download(files, dest_dir):
+        for filename, content in content_by_filename.items():
+            with open(os.path.join(dest_dir, filename), "w") as f:
+                f.write(content)
+        return []
+    return fake_download
+
+
+class TestFileDownloads(unittest.TestCase):
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_demo_mode_can_read_downloaded_file(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "1,2,3"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        result = evaluation_function("print(open('data.csv').read())", None, params).to_dict()
+
+        self.assertIn("1,2,3", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_io_test_downloads_once_for_all_tests(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "42"})
+        params = {
+            "mode": "io_test",
+            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
+            "tests": [_test("", "42\n"), _test("", "42\n")],
+        }
+        result = evaluation_function("print(open('data.csv').read())", None, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        mock_download.assert_called_once()
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_answer_code_receives_same_files(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "7"})
+        params = {
+            "mode": "io_test",
+            "use_answer_as_expected_output": True,
+            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
+            "tests": [{"input": ""}],
+        }
+        code = "print(open('data.csv').read())"
+        result = evaluation_function(code, code, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_missing_file_reported_as_warning(self, mock_download):
+        mock_download.return_value = ["File 'data.csv' could not be found."]
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        result = evaluation_function("print('hi')", None, params).to_dict()
+
+        self.assertIn("could not be found", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_import_of_uploaded_module(self, mock_download):
+        mock_download.side_effect = _stub_download({"helper.py": "def square(n):\n    return n * n\n"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "helper.py"}]}
+        result = evaluation_function("import helper\nprint(helper.square(4))", None, params).to_dict()
+
+        self.assertIn("16", result["feedback"])
+
+    def test_no_files_param_no_download_call(self):
+        with patch("evaluation_function.evaluation.download_files") as mock_download:
+            evaluation_function("print('hi')", None, {"mode": "demo"})
+            mock_download.assert_not_called()
+
+
+class TestMalformedFileSpec(unittest.TestCase):
+
+    def test_legacy_filename_key_does_not_crash(self):
+        # Reproduces the real-world crash report shape: a client sending the
+        # old/wrong "filename" key instead of "name". Must not crash.
+        params = {
+            "mode": "demo",
+            "files": [{
+                "url": "https://example.com/k",
+                "filename": "score_utils.py",
+                "type": "text/x-python-script",
+                "size": 237,
+            }],
+        }
+        result = evaluation_function("print('hi')", None, params).to_dict()
+
+        self.assertIn("hi", result["feedback"])
+        self.assertIn("missing", result["feedback"].lower())
+
+
+class TestFilesInResponsePayload(unittest.TestCase):
+    """The LF web client delivers uploads inside the response payload as
+    {"code": ..., "files": [...]} rather than in params["files"]."""
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_response_dict_with_code_and_files(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "1,2,3"})
+        response = {
+            "code": "print(open('data.csv').read())",
+            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
+        }
+        result = evaluation_function(response, None, {"mode": "demo"}).to_dict()
+
+        self.assertIn("1,2,3", result["feedback"])
+        mock_download.assert_called_once()
+        passed_specs = mock_download.call_args[0][0]
+        self.assertEqual(passed_specs, [{"url": "https://example.com/k", "name": "data.csv"}])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_response_dict_file_entries_are_json_strings(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "42"})
+        response = {
+            "code": "print(open('data.csv').read())",
+            "files": [json.dumps({"url": "https://example.com/k", "name": "data.csv"})],
+        }
+        result = evaluation_function(response, None, {"mode": "demo"}).to_dict()
+
+        self.assertIn("42", result["feedback"])
+        passed_specs = mock_download.call_args[0][0]
+        self.assertEqual(passed_specs, [{"url": "https://example.com/k", "name": "data.csv"}])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_response_is_json_string_of_payload(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "7"})
+        response = json.dumps({
+            "code": "print(open('data.csv').read())",
+            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
+        })
+        result = evaluation_function(response, None, {"mode": "demo"}).to_dict()
+
+        self.assertIn("7", result["feedback"])
+        mock_download.assert_called_once()
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_unit_test_mode_reads_files_from_response(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "x"})
+        response = {
+            "code": "",
+            "files": [{"url": "https://example.com/k", "name": "data.csv"}],
+        }
+        params = {
+            "mode": "unit_test",
+            "test_code": "import os\ndef test_present():\n    assert os.path.isfile('data.csv')\n",
+        }
+        result = evaluation_function(response, None, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_plain_string_response_still_uses_params_files(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "9"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        result = evaluation_function("print(open('data.csv').read())", None, params).to_dict()
+
+        self.assertIn("9", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_response_files_take_precedence_over_params_files(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "from_response"})
+        response = {
+            "code": "print(open('data.csv').read())",
+            "files": [{"url": "https://example.com/response", "name": "data.csv"}],
+        }
+        params = {"mode": "demo", "files": [{"url": "https://example.com/params", "name": "other.csv"}]}
+        evaluation_function(response, None, params)
+
+        passed_specs = mock_download.call_args[0][0]
+        self.assertEqual(passed_specs, [{"url": "https://example.com/response", "name": "data.csv"}])
+
+    def test_response_dict_without_files_no_download(self):
+        with patch("evaluation_function.evaluation.download_files") as mock_download:
+            evaluation_function({"code": "print('hi')"}, None, {"mode": "demo"})
+            mock_download.assert_not_called()
+
+
+class TestAnswerFieldPayload(unittest.TestCase):
+    """With the file-upload widget the answer field is delivered in the same
+    {"code", "files"} shape as the submission, not as a bare string."""
+
+    def test_unit_test_code_from_answer_dict(self):
+        response = {"code": "def square(n):\n    return n * n\n"}
+        answer = {"code": "def test_sq():\n    assert square(4) == 16\n", "files": []}
+        params = {"mode": "unit_test", "use_answer_as_test_code": True}
+        result = evaluation_function(response, answer, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+    def test_unit_test_code_from_answer_json_string(self):
+        answer = json.dumps({"code": "def test_ok():\n    assert True\n", "files": []})
+        params = {"mode": "unit_test", "use_answer_as_test_code": True}
+        result = evaluation_function({"code": ""}, answer, params).to_dict()
+
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+    def test_io_expected_output_from_answer_dict(self):
+        response = {"code": "print(6)"}
+        answer = {"code": "print(2 * 3)", "files": []}
+        params = {"mode": "io_test", "use_answer_as_expected_output": True,
+                  "tests": [{"input": ""}]}
+        result = evaluation_function(response, answer, params).to_dict()
+
+        self.assertTrue(result["is_correct"])
+
+    def test_plain_string_answer_still_works(self):
+        params = {"mode": "unit_test", "use_answer_as_test_code": True}
+        result = evaluation_function("x = 1", "def test_ok():\n    assert True\n", params).to_dict()
+
+        self.assertIn("1/1 tests passed", result["feedback"])
+
+
+class TestUnexpectedExceptionHandling(unittest.TestCase):
+
+    @patch("evaluation_function.evaluation._run_code")
+    def test_unexpected_exception_during_evaluation_is_caught(self, mock_run):
+        mock_run.side_effect = RuntimeError("boom")
+
+        result = evaluation_function("print('hi')", None, {"mode": "demo"}).to_dict(include_test_data=True)
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("error", result["tags"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_exception_in_download_files_becomes_error_result(self, mock_download):
+        # Simulates a bug in download_files() itself (defense-in-depth,
+        # independent of the s3_files.py validation fix).
+        mock_download.side_effect = KeyError("name")
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+
+        result = evaluation_function("print('hi')", None, params).to_dict(include_test_data=True)
+
+        self.assertFalse(result["is_correct"])
+        self.assertIn("error", result["tags"])
+
+    def test_files_dir_cleaned_up_even_on_exception(self):
+        created_dirs = []
+        real_mkdtemp = tempfile.mkdtemp
+
+        def tracking_mkdtemp(*args, **kwargs):
+            d = real_mkdtemp(*args, **kwargs)
+            created_dirs.append(d)
+            return d
+
+        with patch("evaluation_function.evaluation.download_files", side_effect=RuntimeError("boom")), \
+                patch("evaluation_function.evaluation.tempfile.mkdtemp", side_effect=tracking_mkdtemp):
+            params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+            evaluation_function("print('hi')", None, params)
+
+        self.assertTrue(created_dirs)
+        self.assertFalse(os.path.exists(created_dirs[0]))
+
+
+class TestFileAccessSandbox(unittest.TestCase):
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_read_downloaded_file_succeeds(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "hello"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        result = evaluation_function("print(open('data.csv').read())", None, params).to_dict()
+
+        self.assertIn("hello", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_write_mode_to_provided_file_blocked(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "hello"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        result = evaluation_function("open('data.csv', 'w')", None, params).to_dict()
+
+        self.assertIn("read-only", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_write_new_file_in_run_dir_blocked(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "hello"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        result = evaluation_function("open('output.txt', 'w')", None, params).to_dict()
+
+        self.assertIn("read-only", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_pathlib_read_respects_sandbox(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "world"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        code = "from pathlib import Path\nprint(Path('data.csv').read_text())"
+        result = evaluation_function(code, None, params).to_dict()
+
+        self.assertIn("world", result["feedback"])
+
+    @patch("evaluation_function.evaluation.download_files")
+    def test_pathlib_write_respects_sandbox(self, mock_download):
+        mock_download.side_effect = _stub_download({"data.csv": "world"})
+        params = {"mode": "demo", "files": [{"url": "https://example.com/k", "name": "data.csv"}]}
+        code = "from pathlib import Path\nPath('data.csv').write_text('nope')"
+        result = evaluation_function(code, None, params).to_dict()
+
+        self.assertIn("read-only", result["feedback"])
 
 
 class TestPep8Feedback(unittest.TestCase):
