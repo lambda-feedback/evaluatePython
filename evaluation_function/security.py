@@ -1,17 +1,13 @@
 import ast
 
-# NOTE: `open`/`pathlib` are intentionally NOT blocked -- student code needs
-# them to read files supplied via params["files"] / the response payload.
-# Write access into the per-run files dir is still blocked at runtime by
-# `_safe_open` in evaluation.py's subprocess preamble.
 _BLOCKED_MODULES = {
     "os", "sys", "subprocess", "socket", "urllib", "http",
-    "requests", "shutil", "ftplib", "smtplib",
+    "requests", "shutil", "pathlib", "ftplib", "smtplib",
     "ctypes", "multiprocessing", "threading", "importlib",
     "pickle", "builtins",
 }
 
-_BLOCKED_BUILTINS = {"exec", "eval", "compile", "__import__"}
+_BLOCKED_BUILTINS = {"exec", "eval", "compile", "open", "__import__"}
 
 
 class _SecurityVisitor(ast.NodeVisitor):

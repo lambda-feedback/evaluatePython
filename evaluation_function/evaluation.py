@@ -3,9 +3,7 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
-import traceback
 from typing import Any
 
 import pycodestyle
@@ -13,7 +11,6 @@ from PIL import Image
 from lf_toolkit.evaluation import Result, Params
 from lf_toolkit.evaluation.image_upload import upload_image, ImageUploadError
 
-from .s3_files import download_files
 from .security import check_code_safety
 
 _TIMEOUT = 25
@@ -35,26 +32,9 @@ class _Pep8Report(pycodestyle.BaseReport):
 
 _PREAMBLE_TEMPLATE = """\
 import os as _os
-import io as _io
-import builtins as _builtins
 
 _plot_dir = {plot_dir!r}
 _plot_idx = [0]
-
-_files_dir = _os.path.realpath({files_dir!r})
-_real_open = _builtins.open
-
-def _safe_open(file, mode="r", *args, **kwargs):
-    if isinstance(file, (str, _os.PathLike)) and any(m in mode for m in ("w", "a", "x", "+")):
-        _target = _os.path.realpath(_os.path.join(_files_dir, _os.fspath(file)))
-        if _os.path.commonpath([_target, _files_dir]) == _files_dir:
-            raise PermissionError("Provided files are read-only and cannot be modified.")
-    return _real_open(file, mode, *args, **kwargs)
-
-# pathlib.Path.open()/read_text()/write_text() call io.open(...) directly,
-# not the builtins.open name, so both bindings must be patched.
-_builtins.open = _safe_open
-_io.open = _safe_open
 
 def _capture_plots():
     import sys as _sys
@@ -129,22 +109,19 @@ def _add_repl_print(code: str) -> str:
     return code + f"\nprint(repr({ast.unparse(node)}))"
 
 
-def _run_code(code: str, stdin: str, files_dir: str | None = None) -> tuple[str, str, bool, list[Image.Image]]:
+def _run_code(code: str, stdin: str) -> tuple[str, str, bool, list[Image.Image]]:
     plot_dir = tempfile.mkdtemp()
-    own_run_dir = files_dir is None
-    run_dir = files_dir if files_dir is not None else tempfile.mkdtemp()
-    preamble = _PREAMBLE_TEMPLATE.format(plot_dir=plot_dir, files_dir=run_dir)
-    script_path = os.path.join(run_dir, "_submission.py")
-    with open(script_path, "w") as f:
+    preamble = _PREAMBLE_TEMPLATE.format(plot_dir=plot_dir)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
         f.write(preamble + "\n" + code + "\n" + _CAPTURE_CALL)
+        tmpfile = f.name
     try:
         proc = subprocess.run(
-            ["python", "_submission.py"],
+            ["python", tmpfile],
             input=stdin,
             capture_output=True,
             text=True,
             timeout=_TIMEOUT,
-            cwd=run_dir,
             env={**os.environ, "MPLBACKEND": "Agg", "MPLCONFIGDIR": "/tmp"},
         )
         images = []
@@ -158,10 +135,8 @@ def _run_code(code: str, stdin: str, files_dir: str | None = None) -> tuple[str,
     except subprocess.TimeoutExpired:
         return "", "", True, []
     finally:
-        os.unlink(script_path)
+        os.unlink(tmpfile)
         shutil.rmtree(plot_dir, ignore_errors=True)
-        if own_run_dir:
-            shutil.rmtree(run_dir, ignore_errors=True)
 
 
 def _code_block(label: str, content: str) -> str:
@@ -194,9 +169,9 @@ def _check_pep8(code: str, select: list[str]) -> list[str]:
     return [f"Line {ln}: {text}" for ln, text in checker.report.violations]
 
 
-def _evaluate_demo(response: str, result: Result, files_dir: str | None = None) -> Result:
+def _evaluate_demo(response: str, result: Result) -> Result:
     response = _add_repl_print(response)
-    stdout, stderr, timed_out, images = _run_code(response, "", files_dir)
+    stdout, stderr, timed_out, images = _run_code(response, "")
     if timed_out:
         result.add_feedback("error", f"Code timed out after {_TIMEOUT}s.")
     elif stderr and not stdout:
@@ -208,7 +183,7 @@ def _evaluate_demo(response: str, result: Result, files_dir: str | None = None) 
     return result
 
 
-def _evaluate_io(response: str, tests: list, result: Result, answer: str = "", files_dir: str | None = None) -> Result:
+def _evaluate_io(response: str, tests: list, result: Result, answer: str = "") -> Result:
     passed = 0
     response = _add_repl_print(response)
 
@@ -231,12 +206,12 @@ def _evaluate_io(response: str, tests: list, result: Result, answer: str = "", f
         if answer:
             ans_code = _add_repl_print(answer)
             ans_run_code = (prefix + ans_code) if inject else ans_code
-            ans_stdout, _, _, _ = _run_code(ans_run_code, run_stdin, files_dir)
+            ans_stdout, _, _, _ = _run_code(ans_run_code, run_stdin)
             expected = ans_stdout.rstrip()
         else:
             expected = test.get("expected_output", "").rstrip()
 
-        stdout, stderr, timed_out, images = _run_code(run_code, run_stdin, files_dir)
+        stdout, stderr, timed_out, images = _run_code(run_code, run_stdin)
         actual = stdout.rstrip()
         label = f"Hidden test {i}" if hidden else f"Test {i}"
 
@@ -273,7 +248,7 @@ def _evaluate_io(response: str, tests: list, result: Result, answer: str = "", f
     return result
 
 
-def _evaluate_unit(response: str, test_code: str, result: Result, files_dir: str | None = None) -> Result:
+def _evaluate_unit(response: str, test_code: str, result: Result) -> Result:
     if not test_code.strip():
         result.add_feedback("error", "No test code provided for unit_test mode.")
         return result
@@ -281,7 +256,7 @@ def _evaluate_unit(response: str, test_code: str, result: Result, files_dir: str
     results_path = tempfile.mktemp(suffix=".json")
     runner = _UNIT_RUNNER_TEMPLATE.format(results_path=results_path)
     combined = _add_repl_print(response) + "\n\n" + test_code + runner
-    stdout, stderr, timed_out, _ = _run_code(combined, "", files_dir)
+    stdout, stderr, timed_out, _ = _run_code(combined, "")
 
     test_results = None
     try:
@@ -323,41 +298,6 @@ def _evaluate_unit(response: str, test_code: str, result: Result, files_dir: str
     return result
 
 
-def _coerce_file_specs(raw: Any) -> list:
-    """Normalise a raw files value into a list of {url, name} dicts.
-
-    Entries may already be dicts, or JSON-encoded strings — the LF web
-    client may serialise each upload entry to a string.
-    """
-    if not isinstance(raw, (list, tuple)):
-        return []
-    specs = []
-    for entry in raw:
-        if isinstance(entry, str):
-            try:
-                entry = json.loads(entry)
-            except (ValueError, TypeError):
-                continue
-        if isinstance(entry, dict):
-            specs.append(entry)
-    return specs
-
-
-def _collect_file_specs(params: Params) -> list:
-    """Gather the files to make available for this request.
-
-    The LF client passes the teacher's files as params["answer_files"]
-    (saved in the response area's grade params) and the student's uploads
-    as params["response_files"] (sent with each check). params["files"] is
-    accepted as a legacy alias for answer_files. All files land in one
-    working directory; on a name clash the teacher's file wins.
-    """
-    teacher = _coerce_file_specs(params.get("answer_files")) + _coerce_file_specs(params.get("files"))
-    student = _coerce_file_specs(params.get("response_files"))
-    teacher_names = {spec.get("name") for spec in teacher}
-    return [spec for spec in student if spec.get("name") not in teacher_names] + teacher
-
-
 def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
     result = Result()
     mode = params.get("mode")
@@ -365,10 +305,7 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         result.add_feedback("error", f"Unknown or missing mode: {mode!r}. Expected 'demo', 'io_test', or 'unit_test'.")
         return result
 
-    code = str(response)
-    file_specs = _collect_file_specs(params)
-
-    violations = check_code_safety(code)
+    violations = check_code_safety(str(response))
     if violations:
         result.add_feedback(
             "error",
@@ -376,44 +313,23 @@ def evaluation_function(response: Any, answer: Any, params: Params) -> Result:
         )
         return result
 
-    files_dir = None
-    try:
-        file_warnings: list[str] = []
-        if file_specs:
-            files_dir = tempfile.mkdtemp()
-            file_warnings = download_files(file_specs, files_dir)
+    if mode == "demo":
+        result = _evaluate_demo(str(response), result)
+    elif mode == "io_test":
+        ans = str(answer) if params.get("use_answer_as_expected_output") else ""
+        result = _evaluate_io(str(response), params.get("tests", []), result, answer=ans)
+    else:
+        test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
+        result = _evaluate_unit(str(response), test_code, result)
 
-        if mode == "demo":
-            result = _evaluate_demo(code, result, files_dir)
-        elif mode == "io_test":
-            ans = str(answer) if params.get("use_answer_as_expected_output") else ""
-            result = _evaluate_io(code, params.get("tests", []), result, answer=ans, files_dir=files_dir)
+    pep8_param = params.get("pep8_feedback")
+    if pep8_param:
+        select = pep8_param if isinstance(pep8_param, list) else _PEP8_SELECT
+        violations = _check_pep8(str(response), select)
+        if violations:
+            body = "Style suggestions (PEP8):\n" + "\n".join(f"- {v}" for v in violations)
         else:
-            test_code = str(answer) if params.get("use_answer_as_test_code") else params.get("test_code", "")
-            result = _evaluate_unit(code, test_code, result, files_dir=files_dir)
-
-        for warning in file_warnings:
-            result.add_feedback("error", warning)
-
-        pep8_param = params.get("pep8_feedback")
-        if pep8_param:
-            select = pep8_param if isinstance(pep8_param, list) else _PEP8_SELECT
-            violations = _check_pep8(code, select)
-            if violations:
-                body = "Style suggestions (PEP8):\n" + "\n".join(f"- {v}" for v in violations)
-            else:
-                body = "No style issues found."
-            result.add_feedback("style", body)
-    except Exception:
-        traceback.print_exc(file=sys.stderr)
-        result = Result()
-        result.add_feedback(
-            "error",
-            "An unexpected internal error occurred while evaluating this submission. "
-            "Please contact a course organizer.",
-        )
-    finally:
-        if files_dir is not None:
-            shutil.rmtree(files_dir, ignore_errors=True)
+            body = "No style issues found."
+        result.add_feedback("style", body)
 
     return result
