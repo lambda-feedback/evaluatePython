@@ -11,13 +11,13 @@ All source lives in `evaluation_function/`:
 | `main.py` | IPC server entry point; registers `evaluation_function` and `preview_function` with lf_toolkit |
 | `evaluation.py` | Core evaluation pipeline: security check → subprocess execution → output comparison → plot upload (GCS/S3 via lf_toolkit) → structured feedback |
 | `preview.py` | AST-based pre-execution security validator (`_SecurityVisitor`) |
-| `s3_files.py` | Downloads `params["answer_files"]`/`params["response_files"]` objects into the per-request working directory |
+| `s3_files.py` | Downloads `params["files"]` objects from S3 into the per-request working directory |
 | `dev.py` | CLI wrapper for local manual testing |
 
 ### Evaluation pipeline (`evaluation.py`)
 
 1. Run AST security check on student code
-2. Gather file specs from params via `_collect_file_specs`: `params["answer_files"]` (teacher, plus legacy `params["files"]`) and `params["response_files"]` (student); teacher files win on a name clash. The response and answer are plain code strings. If any files are listed, download the listed objects once into a per-request working directory (see `s3_files.py`), used as the subprocess `cwd` for every run in this request
+2. Resolve the submission into `(code, file_specs)` via `_resolve_submission`: the response may be a bare code string, or a `{"code", "files"}` object (or JSON string of one) as sent by the LF web client's upload widget. If `file_specs` (from `response["files"]`, else `params["files"]`) is non-empty, download the listed objects once into a per-request working directory (see `s3_files.py`), used as the subprocess `cwd` for every run in this request
 3. Dispatch by `params["mode"]` (required):
    - **`demo`**: execute code with no stdin; return stdout/plots as `output` feedback (no pass/fail)
    - **`io_test`**: for each test in `params["tests"]`, execute with `test["input"]` as stdin and compare stdout against `test["expected_output"]`; upload matplotlib plots on pass or fail
@@ -93,28 +93,32 @@ All source lives in `evaluation_function/`:
     "tests": [...]
 }
 
-# answer_files / response_files — optional, work with all modes
-# answer_files: the teacher's files, saved in the response area's gradeParams.
-# response_files: the student's uploads, sent with each check as additionalParams.
-# params["files"] is still accepted as a legacy alias for answer_files.
-# All listed files are downloaded into one per-request working directory
-# (the subprocess's cwd) before student code runs, given a pre-signed or
-# public HTTPS URL per file (fetched directly with a GET — no AWS
-# credentials needed here). On a name clash the teacher's file wins. Entries
-# may be dicts or JSON strings of dicts. Data files can be read with
-# open()/pandas.read_csv()/etc.; .py files are importable since they're
-# co-located with the generated script. The same files are also available
-# to the answer code when use_answer_as_expected_output/use_answer_as_test_code is set.
+# files — optional, works with all modes
+# Downloads files into a per-request working directory (the subprocess's
+# cwd) before student code runs, given a pre-signed or public HTTPS URL per
+# file (fetched directly with a GET — no AWS credentials needed here). Data
+# files can be read with open()/pandas.read_csv()/etc.; .py files are
+# importable by student code since they're co-located with the generated
+# script. The same files are also available to the answer code when
+# use_answer_as_expected_output/use_answer_as_test_code is set.
 {
     "mode": "demo",
-    "answer_files": [
+    "files": [
         {"url": "https://.../data.csv?X-Amz-Signature=...", "name": "data.csv"},
         {"url": "https://.../helper.py?X-Amz-Signature=...", "name": "helper.py"},
-    ],
-    "response_files": [
-        {"url": "https://.../mine.csv?X-Amz-Signature=...", "name": "mine.csv"},
     ]
 }
+
+# files in the response payload (how the LF web client sends uploads)
+# When the response area has a file-upload widget, the client delivers the
+# submission as {"code": ..., "files": [...]} (sometimes as a JSON string of
+# that object), with each file entry itself possibly a JSON string.
+# evaluation_function unpacks this: response["code"] becomes the student
+# code, response["files"] becomes the file list. Files in the response take
+# precedence over params["files"], which stays as a fallback. Entry shape is
+# the same {"url", "name"} as params["files"].
+{"code": "print(open('data.csv').read())",
+ "files": [{"url": "https://.../data.csv?...", "name": "data.csv"}]}
 ```
 
 ### Security model (`preview.py`)
@@ -125,7 +129,7 @@ All source lives in `evaluation_function/`:
 - **Builtins**: `exec`, `eval`, `compile`, `__import__`
 - **Dunder attribute access**: any `__attr__` style attribute
 
-`open`/`pathlib` are intentionally **not** blocked here — they're needed to read files loaded via `params["answer_files"]`/`params["response_files"]` (see above). **Important caveat**: `preview_function` (this check) and `evaluation_function` (actual grading) are registered as two independent RPC methods in `main.py`; `evaluation.py` never calls `preview.py`. This check only powers editor-time linting feedback — it does not gate what code can do at grading time. The real, load-bearing control for file access is a runtime-injected restricted `open`/`io.open` in `evaluation.py`'s subprocess preamble (`_safe_open`), which blocks *write* access to anything inside the per-run files directory. It is not a hard sandbox boundary — since `os`/`subprocess` remain fully importable and runnable at grading time regardless of this feature, a student can bypass file restrictions entirely via `os`. Treat this as scoping the intended file-access path, not as isolation.
+`open`/`pathlib` are intentionally **not** blocked here — they're needed to read files loaded via `params["files"]` (see above). **Important caveat**: `preview_function` (this check) and `evaluation_function` (actual grading) are registered as two independent RPC methods in `main.py`; `evaluation.py` never calls `preview.py`. This check only powers editor-time linting feedback — it does not gate what code can do at grading time. The real, load-bearing control for file access is a runtime-injected restricted `open`/`io.open` in `evaluation.py`'s subprocess preamble (`_safe_open`), which blocks *write* access to anything inside the per-run files directory. It is not a hard sandbox boundary — since `os`/`subprocess` remain fully importable and runnable at grading time regardless of this feature, a student can bypass file restrictions entirely via `os`. Treat this as scoping the intended file-access path, not as isolation.
 
 ## Key commands
 
@@ -180,7 +184,7 @@ CI runs on Python 3.12 and uploads JUnit XML results (`.github/workflows/test-li
 | `LOG_LEVEL` | `debug` | Logging verbosity |
 | `IMAGE_UPLOAD_BACKEND` | `gcs` | Plot upload backend in lf_toolkit (`gcs` set in Dockerfile; override to `s3` on the service to use AWS) |
 | `GCS_BUCKET` | Runtime env | Target bucket for matplotlib plot uploads; set per-environment on the Cloud Run service. Auth is via the runtime service account (ADC) — no keys |
-| `AWS_*` / `S3_BUCKET_URI` | Runtime env | Only for the legacy S3 plot-upload backend (`IMAGE_UPLOAD_BACKEND=s3`). Not needed for `answer_files` / `response_files` downloads — those are plain HTTPS GETs from a pre-signed/public URL |
+| `AWS_*` / `S3_BUCKET_URI` | Runtime env | Only for the legacy S3 plot-upload backend (`IMAGE_UPLOAD_BACKEND=s3`). Not needed for `params["files"]` / response-payload file downloads — those are plain HTTPS GETs from a pre-signed/public URL |
 | `SANDBOX_ENABLED` | `true` | Wrap the worker in shimmy's nsjail sandbox (needs `--privileged` at run time) |
 | `SANDBOX_SECCOMP` | `true` | nsjail seccomp syscall filter |
 | `SANDBOX_RO_BINDS` | `/usr:/lib:/lib64:/bin:/sbin:/etc:/app` | Read-only bind mounts visible inside the jail |
